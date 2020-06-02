@@ -9,20 +9,25 @@ import re
 import random
 
 class Flavor(Enum):
-    SAVORY = "savory"
-    BITTER = "bitter"
-    TART = "tart"
-    SWEET = "sweet"
-    STRONG = "strong"
-    DRY = "dry"
-    SPICY = "spicy"
-    FRESH = "fresh"
-    SMOKY = "smoky"
-    CREAMY = "creamy"
-    HERBAL = "herbal"
-    HOT = "hot"
+    def __new__(cls, value, label):
+        obj = object.__new__(cls)
+        obj._value_ = value
+        obj.label = label
+        return obj
+    BITTER = 0, "bitter"
+    CREAMY = 1, "creamy"
+    DRY = 2, "dry"
+    FRESH = 3, "fresh"
+    HERBAL = 4, "herbal"
+    HOT = 5, "hot"
+    SAVORY = 6, "savory"
+    SMOKY = 7, "smoky"
+    SPICY = 8, "spicy"
+    STRONG = 9, "strong"
+    SWEET = 10, "sweet"
+    TART = 11, "tart"
+    NONE = 12, "none"
 
-class 
 
 class Bottle:
     def __init__(self, name, flavors):
@@ -35,7 +40,10 @@ class Bottle:
     def to_json(self):
         dictionary = {}
         dictionary["name"] = self.name
-        dictionary["flavors"] = self.flavors
+        dictionary["flavors"] = []
+        for flavor in self.flavors:
+            dictionary["flavors"].append(flavor.label)
+        return dictionary
 
     def write_to_file(self, folder):
         data = self.to_json()
@@ -55,3 +63,28 @@ class Bottle:
 if not os.path.exists("Ingredients"):
     os.makedirs("Ingredients")
 
+Simple_Ingredients = []
+
+if os.path.exists("Ingredients.csv"):
+    with codecs.open('Ingredients.csv', encoding='utf-8', mode='r') as ingredients_file:
+        r = csv.reader(ingredients_file)
+        Simple_Ingredients = list(r)
+        Simple_Ingredients = [val for sublist in Simple_Ingredients for val in sublist]
+        ingredients_file.close()
+
+for ingredient in Simple_Ingredients:
+    if not os.path.exists("Ingredients/" + ingredient.replace(" ", "") + ".json"):
+        print(f"~ {ingredient.capitalize()} ~")
+        print("What flavors is this ingredient?")
+        for flavor in Flavor:
+            print(f"{flavor.value}) {flavor.label.capitalize()}")
+        num_flavors = input("> ").split()
+
+        flavors = []
+        for flavor in num_flavors:
+            flavors.append(Flavor(int(flavor)))
+
+        bottle = Bottle(ingredient, flavors)
+        bottle.write_to_file("Ingredients")
+
+        print("")

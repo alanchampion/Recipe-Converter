@@ -10,6 +10,7 @@ import json
 import csv
 import re
 import random
+import difflib
 
 Measurements = ["oz", ".oz", "oz.", "ounce", "ounces", "ml", ".ml", 
 "ml.","tbsp", "tablespoon", "tablespoons", "tsp", "teaspoon", 
@@ -40,6 +41,7 @@ Measurement_Convert = {
 }
 Filler_Words = ["of", "with", "fresh", "freshly", "1:1", "()", "/{/}", "[]"]
 Garnish_Words = ["twist", "garnish", "peel", "wheel", "slice", "wedge", "sprig", "pod", "grated"]
+Note_Words = ["top", "float", "rinse", "none"]
 
 os.system("")
 logging.basicConfig(format='\033[31m%(message)s\033[0m')
@@ -64,12 +66,6 @@ class Type:
     GARNISH = "garnish"
     OPTIONAL = "optional"
 
-class Note(Enum):
-    TOP = "top"
-    FLOAT = "float"
-    RINSE = "rinse"
-    NONE = "none"
-
 class Pack(Enum):
     NONALCOHOLIC = ("Nonalcoholic", 0)
     GROUP = ("Group", 1)
@@ -84,19 +80,28 @@ class Pack(Enum):
         self.pack = pack
         self.importance = importance
 
-class Flavor:
-    SAVORY = "savory"
-    BITTER = "bitter"
-    TART = "tart"
-    SWEET = "sweet"
-    STRONG = "strong"
-    DRY = "dry"
-    SPICY = "spicy"
-    FRESH = "fresh"
-    SMOKY = "smoky"
-    CREAMY = "creamy"
-    HERBAL = "herbal"
-    HOT = "hot"
+class Flavor(Enum):
+    def __new__(cls, value, label):
+        obj = object.__new__(cls)
+        obj._value_ = value
+        obj.label = label
+        return obj
+    @classmethod
+    def has_flavor(cls, value):
+        return value.lower() in [flav.lower() for flav in cls._member_names_]
+    BITTER = 0, "bitter"
+    CREAMY = 1, "creamy"
+    DRY = 2, "dry"
+    FRESH = 3, "fresh"
+    HERBAL = 4, "herbal"
+    HOT = 5, "hot"
+    SAVORY = 6, "savory"
+    SMOKY = 7, "smoky"
+    SPICY = 8, "spicy"
+    STRONG = 9, "strong"
+    SWEET = 10, "sweet"
+    TART = 11, "tart"
+    NONE = 12, "none"
 
 class Glass(Enum):
     ROCK = "rocks"
@@ -115,11 +120,92 @@ class Glass(Enum):
 
 class Bottle:
     def __init__(self, name, flavors):
-        self.name = name
+        self.name = name.lower()
         self.flavors = flavors
 
     def __str__(self):
-        print("%s")
+        return f"{self.name} {self.flavors}"
+
+    def to_json(self):
+        dictionary = {}
+        dictionary["name"] = self.name
+        dictionary["flavors"] = []
+        for flavor in self.flavors:
+            dictionary["flavors"].append(flavor.label)
+        return dictionary
+
+    def write_to_file(self, folder):
+        data = self.to_json()
+        file = folder + '/' + self.name.replace(" ", "") + ".json"
+
+        while os.path.exists(file):
+            print("The file %s already exists. Do you want to (r)eplace the file or create (n)ew?" % file)
+            selection = input("> ")
+            if selection.lower() == 'r':
+                os.remove(file)
+            else:
+                name = input('New name: ')
+                file = folder + '/' + name.replace(" ", "") + ".json"
+        with codecs.open(file, encoding='utf-8', mode='w') as outfile:
+            json.dump(data, outfile)
+
+class Bar:
+    def __init__(self, bottles):
+        self.bottles = bottles
+    def __str__(self):
+        string = "==============================- Bar -==============================\n"
+        for bottle in self.bottles:
+            string += str(bottle) + "\n"
+        string += "==============================- Bar -==============================\n"
+        return string
+    def __getitem__(self, index):
+        return self.bottles[index]
+    def __contains__(self, item):
+        return item.lower() in [bottle.name.lower() for bottle in self.bottles]
+    def add_ingredient(self, name):
+        if name in self:
+            print(f"{name} is already in this bar. Do you want to override it?")
+            override = input("> ")
+            if override.lower() != "y":
+                print(f"Not overriding ingredient {name}")
+                return name
+        
+        matches = difflib.get_close_matches(name.lower(), self.get_names())
+        if len(matches) > 0:
+            print(f"There are ingredients similar to {name}. Would you like to use one of these?")
+            for index, match in enumerate(matches):
+                print(f"{index}) {self.get_bottle(match)}")
+            index = input("> ")
+            if index.isdigit() and int(index) < len(matches):
+                return matches[int(index)]
+
+        print(f"What flavors are in {name}? Type c to cancel.")
+        for flavor in Flavor:
+            print(f"{flavor.value}) {flavor.label.capitalize()}")
+        num_flavors = input("> ").split()
+
+        flavors = []
+        for flavor in num_flavors:
+            if not flavor.isdigit():
+                return name
+            flavors.append(Flavor(int(flavor)))
+
+        bottle = Bottle(name, flavors)
+        try:
+            bottle.write_to_file("Ingredients")
+            self.bottles.append(bottle)
+        except:
+            print("Error saving ingredient.")
+
+        print("")
+        return name
+    def get_names(self):
+        return [bottle.name.lower() for bottle in self.bottles]
+    def get_bottle(self, name):
+        for bottle in self.bottles:
+            if bottle.name == name.lower():
+                return bottle
+        return None
 
 class RecipeBox:
     def __init__(self, location):
@@ -144,7 +230,7 @@ class RecipeBox:
         self.recipes.append(recipe)
 
 class Ingredient:
-    def __init__(self, amount, measurement, name, ingredient_type=Type.MAIN, notes=Note.NONE):
+    def __init__(self, amount, measurement, name, ingredient_type=Type.MAIN, notes="none"):
         self.name = name
         self.amount = amount
         self.measurement = measurement.lower()
@@ -163,8 +249,8 @@ class Ingredient:
         else:
             string += "%s\n%s\n%s\n%s" % (self.amount_text, self.measurement_text, self.name_text, self.ingredient_type)
 
-        if(self.notes != Note.NONE):
-            string += "\n[%s]" % self.notes.value
+        if(self.notes != "none"):
+            string += "\n[%s]" % self.notes
 
         return string
 
@@ -186,7 +272,7 @@ class Ingredient:
         else:
             self.amount_text = color_text(self.amount, Style.GREEN)
 
-        if self.name.lower() not in Ingredients and self.name:
+        if self.name.lower() not in CurrentBar and self.name:
             self.name_valid = False
             self.name_text = color_text(self.name, Style.RED)
         elif not self.name:
@@ -209,7 +295,7 @@ class Ingredient:
         dictionary["measurement"] = self.measurement
         dictionary["ingredient"] = self.name
         dictionary["type"] = self.ingredient_type
-        dictionary["notes"] = self.notes.value
+        dictionary["notes"] = self.notes
         return dictionary
 
     def print(self):
@@ -223,8 +309,8 @@ class Ingredient:
 
         if self.ingredient_type != Type.MAIN:
             string += " (%s)" % self.ingredient_type
-        if self.notes != Note.NONE:
-            string += " [%s]" % self.notes.value
+        if self.notes != "none":
+            string += " [%s]" % self.notes
 
         return string
 
@@ -232,17 +318,17 @@ class Ingredient:
         self.validate()
         string = ""
 
-        if self.amount == "":
-            string += "%s %s" % (self.measurement_text, self.name_text)
-        elif self.measurement == "":
-            string += "%s %s" % (self.amount_text, self.name_text)
-        else:
-            string += "%s %s %s" % (self.amount_text, self.measurement_text, self.name_text)
+        if self.amount:
+            string += f"{self.amount_text} "
+        if self.measurement:
+            string += f"{self.measurement_text} "
+
+        string += f"{self.name_text}"
 
         if self.ingredient_type != Type.MAIN:
             string += " (%s)" % self.ingredient_type
-        if self.notes != Note.NONE:
-            string += " [%s]" % self.notes.value
+        if self.notes != "none":
+            string += " [%s]" % self.notes
 
         return string
 
@@ -271,12 +357,12 @@ class Recipe:
         string = "--------------------\n"
         string += self.title + "\n"
         string += "Pack: " + self.pack.pack + "\n"
-        string += "Old Labels: " + ", ".join(self.labels) + "\n\n"
+        string += "Old Labels: " + ", ".join(self.labels) + "\n"
+        if self.glass != Glass.NONE:
+            string += "Glass: " + self.glass.value.capitalize() + "\n\n"
         for ingredient in self.ingredients:
             string += ingredient.print() + "\n"
-        string += "\n" + self.instructions + "\n"
-        if self.glass != Glass.NONE:
-            string += "Glass: " + self.glass.value + "\n\n"
+        string += "\n" + self.instructions + "\n\n"
         string += self.information + "\n"
         string += "--------------------"
         return string
@@ -321,6 +407,14 @@ def check_number(text):
     else:
         return True
 
+def format_number(text):
+    if check_number(text):
+        if text.isdigit():
+            return int(text)
+        else:
+            return float(text)
+    return text
+
 def simplify_glass(glass):
     if glass == Glass.PINT:
         return Glass.PILSNER.value
@@ -336,7 +430,7 @@ def check_measurement(measurement):
 def remove_measurement(ingredient):
     ingredient = ingredient.strip()
     if not(ingredient.startswith('or ') or ingredient.startswith('-or- ') 
-        or ('(' in ingredient and ')' in ingredient) 
+        or ('(' in ingredient and ')' in ingredient)
         or ('[' in ingredient and ']' in ingredient)):
         return ingredient
 
@@ -352,7 +446,7 @@ def remove_measurement(ingredient):
 def divide_ingredient(ingredient_text, set_type=False):
     ingredient_text = ingredient_text.lower()
     ingredient_type = Type.MAIN
-    notes = Note.NONE
+    notes = "none"
 
     if set_type:
         for word in Garnish_Words:
@@ -361,9 +455,12 @@ def divide_ingredient(ingredient_text, set_type=False):
                 break
         if Type.GARNISH in ingredient_text:
             ingredient_text = ingredient_text.replace("garnish", "")
-        for note in Note:
-            if note.value in ingredient_text:
+        for note in Note_Words:
+            if note in ingredient_text:
                 notes = note
+        if notes == "none":
+            if '[' in ingredient_text and ']' in ingredient_text:
+                notes = ingredient_text[ingredient_text.find("[")+1:ingredient_text.find("]")]
         if Type.OPTIONAL in ingredient_text:
             ingredient_type = Type.OPTIONAL
             ingredient_text = ingredient_text.replace("optional", "")
@@ -371,9 +468,12 @@ def divide_ingredient(ingredient_text, set_type=False):
         if Type.GARNISH in ingredient_text:
             ingredient_type = Type.GARNISH
             ingredient_text = ingredient_text.replace("garnish", "")
-        for note in Note:
-            if note.value in ingredient_text:
+        for note in Note_Words:
+            if note in ingredient_text:
                 notes = note
+        if notes == "none":
+            if '[' in ingredient_text and ']' in ingredient_text:
+                notes = ingredient_text[ingredient_text.find("[")+1:ingredient_text.find("]")]
         if Type.OPTIONAL in ingredient_text:
             ingredient_type = Type.OPTIONAL
             ingredient_text = ingredient_text.replace("optional", "")
@@ -385,6 +485,9 @@ def divide_ingredient(ingredient_text, set_type=False):
     
     if len(divided_ingredient) == 2 and divided_ingredient[-1] in Garnish_Words:
         return Ingredient(1, divided_ingredient[1], divided_ingredient[0], ingredient_type)
+
+    if len(divided_ingredient) > 3 and divided_ingredient[0].isdigit() and divided_ingredient[1] == "/" and divided_ingredient[2].isdigit():
+        divided_ingredient = [str(int(divided_ingredient[0])/int(divided_ingredient[2]))] + temp[3:]
 
     need_number = True
     number_index = -1
@@ -404,11 +507,11 @@ def divide_ingredient(ingredient_text, set_type=False):
         if need_ingredient and item.lower() not in Measurements:
             ingredient_index = number
             need_ingredient = False
-        if item.lower() in [note.value.lower() for note in Note]:
-            notes = Note(item.lower())
+        if item.lower() in [note.lower() for note in Note_Words]:
+            notes = item.lower()
 
-    if notes != Note.NONE and notes.value in divided_ingredient:
-        divided_ingredient.remove(notes.value)
+    if notes != "none" and notes in divided_ingredient:
+        divided_ingredient.remove(notes)
 
     number = " ".join(divided_ingredient[:number_index+1])
     measurement = " ".join(divided_ingredient[number_index+1:measurement_index+1])
@@ -421,10 +524,11 @@ def divide_ingredient(ingredient_text, set_type=False):
         ingredient = " ".join(divided_ingredient[ingredient_index:])
     ingredient = remove_measurement(ingredient)
 
-    if notes == Note.TOP and not number:
+    if notes.lower() == "top" and not number:
         number = "1"
         measurement = "oz"
 
+    number = format_number(number)
     return Ingredient(number, measurement, ingredient, ingredient_type, notes)
 
 def delete_ingredients(divided_ingredients):
@@ -451,6 +555,20 @@ def change_ingredient_type(ingredient):
     
     return ingredient
 
+def modify_ingredient(ingredient):
+    matches = difflib.get_close_matches(ingredient.name.lower(), CurrentBar.get_names())
+    if len(matches) > 0:
+        print(f"There are ingredients similar to {ingredient.name}. Would you like to use one of these? 'N' for no.")
+        for index, match in enumerate(matches):
+            print(f"{index}) {CurrentBar.get_bottle(match)}")
+        index = input("> ")
+        if index.isdigit() and int(index) < len(matches):
+            ingredient.name = matches[int(index)]
+            return divide_ingredient(ingredient.print())
+
+    modified_ingredient = edit_text(ingredient.print())
+    return divide_ingredient(modified_ingredient)
+
 def process_ingredients(ingredients):
     while True:
         print('============================================================')
@@ -465,47 +583,54 @@ def process_ingredients(ingredients):
         print("(A)dd ingredient")
         print("Change ingredient (T)ype")
         print("(S)ave new ingredient to possible ingredients")
+        print("(P)rint current bar")
         print("(F)inish")
         print("(Q)uit and save with errors")
         selection = input('> ')
 
-        if selection.lower() == "q" or selection.lower() == "quit":
-            return ingredients
-        elif selection.lower() == "d":
-            delete_ingredients(ingredients)
-        elif selection.lower() == "a":
-            ingredient = edit_text("")
-            ingredients.append(divide_ingredient(ingredient, True))
-        elif selection.lower() == "t":
-            print("Which ingredient do you want to change type of?")
-            selection = input("> ")
-            index = int(selection)
-            if(index >= len(ingredients)):
-                print("Selection must be valid ingredient number.")
-            ingredients[index] = change_ingredient_type(ingredients[index])
-        elif selection.lower() == "s":
-            print("Which ingredient do you want to save?")
-            selection = input("> ")
-            index = int(selection)
-            if(index >= len(ingredients)):
-                print("Selection must be valid ingredient number.")
-            Ingredients.append(ingredients[index].name.lower())
-        elif selection.isnumeric():
-            index = int(selection)
-            if(index >= len(ingredients)):
-                print("Selection must be valid ingredient number.")
-            modified_ingredient = edit_text(ingredients[index].print())
-            ingredients[index] = divide_ingredient(modified_ingredient)
-        else:
-            valid = True
-            for ingredient in ingredients:
-                if not ingredient.validate():
-                    valid = False
-                    break
-            if not valid:
-                print("Not all ingredients are valid. Type 'q' to force quit anyway.")
-            else:
+        try:
+            if selection.lower() == "q" or selection.lower() == "quit":
                 return ingredients
+            elif selection.lower() == "d":
+                delete_ingredients(ingredients)
+            elif selection.lower() == "a":
+                ingredient = edit_text("")
+                ingredients.append(divide_ingredient(ingredient, True))
+            elif selection.lower() == "t":
+                print("Which ingredient do you want to change type of?")
+                selection = input("> ")
+                index = int(selection)
+                if(index >= len(ingredients)):
+                    print("Selection must be valid ingredient number.")
+                ingredients[index] = change_ingredient_type(ingredients[index])
+            elif selection.lower() == "s":
+                print("Which ingredient do you want to save?")
+                selection = input("> ")
+                if selection.isdigit():
+                    index = int(selection)
+                    if(index >= len(ingredients)):
+                        print("Selection must be valid ingredient number.")
+                    ingredients[index].name = CurrentBar.add_ingredient(ingredients[index].name.lower())
+            elif selection.lower() == "p":
+                print(CurrentBar)
+            elif selection.isnumeric():
+                index = int(selection)
+                if(index >= len(ingredients)):
+                    print("Selection must be valid ingredient number.")
+                ingredients[index] = modify_ingredient(ingredients[index])
+            else:
+                valid = True
+                for ingredient in ingredients:
+                    if not ingredient.validate():
+                        valid = False
+                        break
+                if not valid:
+                    print("Not all ingredients are valid. Type 'q' to force quit anyway.")
+                else:
+                    return ingredients
+        except Exception as e:
+            logger.error("Error trying to process request.")
+            logger.error(e)
 
 
 def edit_text(data):
@@ -534,15 +659,15 @@ def find_notes(text):
     need_amount = True
 
     for line in split_text:
-        for note in Note:
-            if note.value in line.lower():
+        for note in Note_Words:
+            if note in line.lower():
                 line = line.replace(".", "")
                 split_line = line.split()
-                for i in Ingredients:
-                    if i in line.lower():
+                for i in CurrentBar:
+                    if i.name in line.lower():
                         ingredient = i
                 for word in split_line:
-                    if word.lower() in Ingredients and need_ingredient:
+                    if word.lower() in CurrentBar and need_ingredient:
                         ingredient = word.lower()
                         need_ingredient = False
                     if word.lower() in Measurements and need_measurement:
@@ -568,7 +693,7 @@ def find_garnishes(text):
             line = line.replace(".", "")
             split_line = line.split()
             for word in split_line:
-                if word.lower() in Ingredients:
+                if word.lower() in CurrentBar:
                     ingredient = word.lower()
                 if word.lower() in Measurements:
                     measurement = word.lower()
@@ -644,7 +769,7 @@ def add_section(divided_text):
 def change_pack(current_pack):
     print("What pack do you want to change to?")
     for number,pack in enumerate(Pack):
-        print("%i) %s" % (number, pack.pack))
+        print("%i) %s" % (number, pack.pack.capitalize()))
     selection = int(input("> "))
 
     if(selection >= len(Pack)):
@@ -657,7 +782,7 @@ def change_pack(current_pack):
 def change_glass(current_glass):
     print("What glass do you want to change to?")
     for number,glass in enumerate(Glass):
-        print("%i) %s" % (number, glass.value))
+        print("%i) %s" % (number, glass.value.capitalize()))
     selection = int(input("> "))
 
     if(selection >= len(Glass)):
@@ -728,14 +853,14 @@ def create_recipe_from_section(title, labels, divided_text):
 
 def process_text_content(title, labels, text_content):
     divided_text = text_content.split('\n\n')
-    if len(divided_text) == 7 and divided_text[3] == "---":
+    if len(divided_text) > 4 and divided_text[3] == "---":
         print(color_text('Found two recipes for "%s". Want to split them? (y/n)' % title, Style.BLUE))
         split = input('> ')
         if split.lower() == 'y' or split.lower() == 'yes':
-            recipe = process_text_content(title, labels, "\n\n".join(divided_text[0:3]))
+            recipe = process_text_content(title, labels, "\n\n".join(divided_text[4:]))
             Recipes.append(recipe)
 
-            divided_text = divided_text[4:7]
+            divided_text = divided_text[0:3]
     first_correct = True
     contains_garnish = False
     found_notes = False
@@ -748,7 +873,7 @@ def process_text_content(title, labels, text_content):
         print('=============================- %s -=============================' % title)
         print("Pack: %s" % pack.pack)
         print("Old Labels: %s" % ", ".join(labels))
-        print("Glass: %s\n" % glass.value)
+        print("Glass: %s\n" % glass.value.capitalize())
         if(len(divided_text) == 3):
             print(Style.GREEN + '-----0 Ingredients 0-----')
 
@@ -759,7 +884,7 @@ def process_text_content(title, labels, text_content):
                     ingredients.append(ingredient)
                     if ingredient.ingredient_type == Type.GARNISH:
                         contains_garnish = True
-                    if ingredient.notes != Note.NONE:
+                    if ingredient.notes != "none":
                         found_notes = True
                     print(ingredient.print_with_errors())
                 if not found_notes:
@@ -813,58 +938,62 @@ def process_text_content(title, labels, text_content):
         print('(Q)uit without saving current recipe')
         selection = input('> ')
 
-        if selection.lower() == "c":
-            divided_text = combine_sections(divided_text)
-        elif selection.lower() == "d":
-            divided_text = delete_sections(divided_text)
-        elif selection.lower() == "s":
-            divided_text = swap_sections(divided_text)
-            first_correct = True
-            contains_garnish = False
-        elif selection.lower() == "m":
-            divided_text = move_section(divided_text)
-            first_correct = True
-            contains_garnish = False
-        elif selection.lower() == "a":
-            divided_text = add_section(divided_text)
-        elif selection.lower() == "n":
-            divided_text = create_recipe_from_section(title, labels, divided_text)
-        elif selection.lower() == "t":
-            title = edit_text(title)
-        elif selection.lower() == "p":
-            pack = change_pack(pack)
-        elif selection.lower() == "i":
-            if(len(divided_text) != 3):
-                print("Must only contain 3 sections: ingredients, instructions, and source/information")
-            else:
-                ingredients = process_ingredients(ingredients)
-                divided_text[0] = "\n".join(list(map(lambda ingredient: ingredient.print(), ingredients)))
-        elif selection.lower() == "g":
-            glass = change_glass(glass)
-        elif selection.lower() == "q":
+        if selection.lower() == "q":
             exit()
-        elif selection.lower() == "f":
-            if len(divided_text) != 3:
-                print("Not finished creating sections for ingredients, instructions, and source/information")
-            else:
-                valid = True
-                for ingredient in ingredients:
-                    if not ingredient.validate():
-                        valid = False
-                        break
-                if not valid:
+
+        try:
+            if selection.lower() == "c":
+                divided_text = combine_sections(divided_text)
+            elif selection.lower() == "d":
+                divided_text = delete_sections(divided_text)
+            elif selection.lower() == "s":
+                divided_text = swap_sections(divided_text)
+                first_correct = True
+                contains_garnish = False
+            elif selection.lower() == "m":
+                divided_text = move_section(divided_text)
+                first_correct = True
+                contains_garnish = False
+            elif selection.lower() == "a":
+                divided_text = add_section(divided_text)
+            elif selection.lower() == "n":
+                divided_text = create_recipe_from_section(title, labels, divided_text)
+            elif selection.lower() == "t":
+                title = edit_text(title)
+            elif selection.lower() == "p":
+                pack = change_pack(pack)
+            elif selection.lower() == "i":
+                if(len(divided_text) != 3):
+                    print("Must only contain 3 sections: ingredients, instructions, and source/information")
+                else:
                     ingredients = process_ingredients(ingredients)
                     divided_text[0] = "\n".join(list(map(lambda ingredient: ingredient.print(), ingredients)))
-                return Recipe(title, ingredients, divided_text[1], divided_text[2], labels, pack, glass)
-        elif selection.isnumeric():
-            index = int(selection)
-            if(index >= len(divided_text)):
-                print("Selection must be valid section.")
-            divided_text[index] = edit_text(divided_text[index])
-            if index == 0:
-                first_correct = True
-        else:
-            print("Invalid command")
+            elif selection.lower() == "g":
+                glass = change_glass(glass)
+            elif selection.lower() == "f":
+                if len(divided_text) != 3:
+                    print("Not finished creating sections for ingredients, instructions, and source/information")
+                else:
+                    valid = True
+                    for ingredient in ingredients:
+                        if not ingredient.validate():
+                            valid = False
+                            break
+                    if not valid:
+                        ingredients = process_ingredients(ingredients)
+                        divided_text[0] = "\n".join(list(map(lambda ingredient: ingredient.print(), ingredients)))
+                    return Recipe(title, ingredients, divided_text[1], divided_text[2], labels, pack, glass)
+            elif selection.isnumeric():
+                index = int(selection)
+                if(index >= len(divided_text)):
+                    print("Selection must be valid section.")
+                divided_text[index] = edit_text(divided_text[index])
+                if index == 0:
+                    first_correct = True
+            else:
+                print("Invalid command")
+        except:
+            logger.error("Error trying to process request.")
 
 def read_in_file(file_name):
     title = ""
@@ -889,18 +1018,43 @@ def read_in_file(file_name):
         json_file.close()
     return None
 
-Recipes = RecipeBox("Recipes")
-Ingredients = set([])
+def read_in_ingredient(file_name):
+    name = ""
+    flavors = []
 
-if os.path.exists("Ingredients.csv"):
-    with codecs.open('Ingredients.csv', encoding='utf-8', mode='r') as ingredients_file:
-        r = csv.reader(ingredients_file)
-        Ingredients = list(r)
-        Ingredients = [val for sublist in Ingredients for val in sublist]
-        ingredients_file.close()
+    with codecs.open(file_name, encoding='utf-8') as json_file:
+        data = json.load(json_file)
+        
+        if 'flavors' in data:
+            for flavor in data['flavors']:
+                if Flavor.has_flavor(flavor):
+                    flavors.append(flavor)
+        if 'name' in data:
+            name = data['name']
+        json_file.close()
+    if name:
+        return Bottle(name, flavors)
+    return None
+
+Recipes = RecipeBox("Recipes")
+ingredients = []
 
 if not os.path.exists("Finished"):
     os.makedirs("Finished")
+
+if os.path.exists("Ingredients"):
+    ingredient_files = [pos_json for pos_json in os.listdir(os.getcwd()+"/Ingredients") if pos_json.endswith('.json')]
+    for file_name in ingredient_files:
+        try:
+            bottle = read_in_ingredient("Ingredients/" + file_name)
+            if bottle is not None:
+                ingredients.append(bottle)
+        except:
+            print(f"Error reading in {file_name}")
+else:
+    os.makedirs("Ingredients")
+
+CurrentBar = Bar(ingredients)
 
 json_files = [pos_json for pos_json in os.listdir(os.getcwd()) if pos_json.endswith('.json')]
 for file_name in json_files:
@@ -917,9 +1071,5 @@ for file_name in json_files:
         logger.error('Error trying to read in a recipe from file "%s"' % file_name)
         logger.error(e)
         logger.error("".join(traceback.format_tb(exc_traceback)))
-    finally:
-        with codecs.open('Ingredients.csv', encoding='utf-8' , mode='w') as ingredients_file:
-            wr = csv.writer(ingredients_file)
-            wr.writerow(Ingredients)
-            ingredients_file.close()
+
 print(Recipes)
