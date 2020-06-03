@@ -42,11 +42,11 @@ Measurement_Convert = {
 Filler_Words = ["of", "with", "fresh", "freshly", "1:1", "()", "/{/}", "[]"]
 Garnish_Words = ["twist", "garnish", "peel", "wheel", "slice", "wedge", "sprig", "pod", "grated"]
 Note_Words = ["top", "float", "rinse", "none"]
+Flavors = ["bitter", "creamy", "dry", "fresh", "herbal", "hot", "savory", "smoky", "spicy", "strong", "sweet", "tart"]
 
 os.system("")
 logging.basicConfig(format='\033[31m%(message)s\033[0m')
 logger = logging.getLogger('Logger')
-
 
 # Group of Different functions for different styles
 class Style:
@@ -80,29 +80,6 @@ class Pack(Enum):
         self.pack = pack
         self.importance = importance
 
-class Flavor(Enum):
-    def __new__(cls, value, label):
-        obj = object.__new__(cls)
-        obj._value_ = value
-        obj.label = label
-        return obj
-    @classmethod
-    def has_flavor(cls, value):
-        return value.lower() in [flav.lower() for flav in cls._member_names_]
-    BITTER = 0, "bitter"
-    CREAMY = 1, "creamy"
-    DRY = 2, "dry"
-    FRESH = 3, "fresh"
-    HERBAL = 4, "herbal"
-    HOT = 5, "hot"
-    SAVORY = 6, "savory"
-    SMOKY = 7, "smoky"
-    SPICY = 8, "spicy"
-    STRONG = 9, "strong"
-    SWEET = 10, "sweet"
-    TART = 11, "tart"
-    NONE = 12, "none"
-
 class Glass(Enum):
     ROCK = "rocks"
     COLLINS = "tom collins"
@@ -129,9 +106,7 @@ class Bottle:
     def to_json(self):
         dictionary = {}
         dictionary["name"] = self.name
-        dictionary["flavors"] = []
-        for flavor in self.flavors:
-            dictionary["flavors"].append(flavor.label)
+        dictionary["flavors"] = self.flavors
         return dictionary
 
     def write_to_file(self, folder):
@@ -180,15 +155,15 @@ class Bar:
                 return matches[int(index)]
 
         print(f"What flavors are in {name}? Type c to cancel.")
-        for flavor in Flavor:
-            print(f"{flavor.value}) {flavor.label.capitalize()}")
+        for index, flavor in enumerate(Flavors):
+            print(f"{index}) {flavor.capitalize()}")
         num_flavors = input("> ").split()
 
         flavors = []
-        for flavor in num_flavors:
-            if not flavor.isdigit():
+        for index in num_flavors:
+            if not index.isdigit():
                 return name
-            flavors.append(Flavor(int(flavor)))
+            flavors.append(Flavors[int(index)])
 
         bottle = Bottle(name, flavors)
         try:
@@ -357,6 +332,7 @@ class Recipe:
         string = "--------------------\n"
         string += self.title + "\n"
         string += "Pack: " + self.pack.pack + "\n"
+        string += "Flavors: " + ", ".join(self.flavors) + "\n"
         string += "Old Labels: " + ", ".join(self.labels) + "\n"
         if self.glass != Glass.NONE:
             string += "Glass: " + self.glass.value.capitalize() + "\n\n"
@@ -371,6 +347,7 @@ class Recipe:
         dictionary = {}
         dictionary["title"] = self.title
         dictionary["pack"] = self.pack.pack
+        dictionary["flavors"] = self.flavors
         dictionary["labels"] = self.labels
         dictionary["glass"] = simplify_glass(self.glass)
         dictionary["ingredients"] = []
@@ -556,15 +533,16 @@ def change_ingredient_type(ingredient):
     return ingredient
 
 def modify_ingredient(ingredient):
-    matches = difflib.get_close_matches(ingredient.name.lower(), CurrentBar.get_names())
-    if len(matches) > 0:
-        print(f"There are ingredients similar to {ingredient.name}. Would you like to use one of these? 'N' for no.")
-        for index, match in enumerate(matches):
-            print(f"{index}) {CurrentBar.get_bottle(match)}")
-        index = input("> ")
-        if index.isdigit() and int(index) < len(matches):
-            ingredient.name = matches[int(index)]
-            return divide_ingredient(ingredient.print())
+    if not ingredient.validate():
+        matches = difflib.get_close_matches(ingredient.name.lower(), CurrentBar.get_names())
+        if len(matches) > 0:
+            print(f"There are ingredients similar to {ingredient.name}. Would you like to use one of these? 'N' for no.")
+            for index, match in enumerate(matches):
+                print(f"{index}) {CurrentBar.get_bottle(match)}")
+            index = input("> ")
+            if index.isdigit() and int(index) < len(matches):
+                ingredient.name = matches[int(index)]
+                return divide_ingredient(ingredient.print())
 
     modified_ingredient = edit_text(ingredient.print())
     return divide_ingredient(modified_ingredient)
@@ -851,6 +829,43 @@ def create_recipe_from_section(title, labels, divided_text):
 
     return divided_text
 
+def find_flavors(ingredients):
+    all_flavors = []
+    flavor1 = "none"
+    flavor2 = "none"
+
+    for ingredient in ingredients:
+        bottle = CurrentBar.get_bottle(ingredient.name)
+        all_flavors.extend(bottle.flavors)
+    all_flavors = list(filter(lambda flavor: flavor.lower() != "none", all_flavors))
+    if len(all_flavors) > 0:
+        flavor1 = max(set(all_flavors), key = all_flavors.count)
+        all_flavors = list(filter(lambda flavor: flavor.lower() != flavor1, all_flavors))
+    if len(all_flavors) > 0:
+        flavor2 = max(set(all_flavors), key = all_flavors.count)
+
+    return flavor1, flavor2
+
+def edit_flavors(flavors):
+    print("Current flavors are %s." % ", ".join(map(lambda flavor: flavor.capitalize(), flavors)))
+    print("What flavors do you want?")
+    for index, flavor in enumerate(Flavors):
+        print(f"{index}) {flavor.capitalize()}")
+    new_flavors_index = input("> ").split()
+
+    if len(new_flavors_index) != 2:
+        logger.error("Can only accept 2 flavors")
+        return flavors
+
+    if new_flavors_index[0].isdigit() and new_flavors_index[1].isdigit():
+        flavor1_index = int(new_flavors_index[0])
+        flavor2_index = int(new_flavors_index[1])
+        if flavor1_index < len(Flavors) and flavor2_index < len(Flavors):
+            return Flavors[flavor1_index], Flavors[flavor2_index]
+
+    logger.error("There was an error setting new flavors.")
+    return flavors
+
 def process_text_content(title, labels, text_content):
     divided_text = text_content.split('\n\n')
     if len(divided_text) > 4 and divided_text[3] == "---":
@@ -864,50 +879,59 @@ def process_text_content(title, labels, text_content):
     first_correct = True
     contains_garnish = False
     found_notes = False
+    ingredients_valid = False
+    need_flavors = True
     ingredients = []
+    flavors = []
 
     pack = find_pack(labels, text_content)
     glass = find_glass(labels, text_content)
 
     while True:
+        if first_correct and len(divided_text) == 3:
+            ingredients = []
+            for ingredient in divided_text[0].split("\n"):
+                ingredient = divide_ingredient(ingredient, first_correct)
+                ingredients.append(ingredient)
+                if ingredient.ingredient_type == Type.GARNISH:
+                    contains_garnish = True
+                if ingredient.notes != "none":
+                    found_notes = True
+            if not found_notes:
+                notes = find_notes(divided_text[1])
+                for note in notes:
+                    ingredients.append(note)
+                    divided_text[0] += "\n"
+                    divided_text[0] += note.print()
+                found_notes = True
+            if not contains_garnish:
+                garnishes = find_garnishes(divided_text[1])
+                for garnish in garnishes:
+                    ingredients.append(garnish)
+                    divided_text[0] += "\n"
+                    divided_text[0] += garnish.print()
+                contains_garnish = True
+            first_correct = False
+
+        if len(divided_text) == 3:
+            ingredients_valid = True
+            for ingredient in ingredients:
+                if not ingredient.validate():
+                    ingredients_valid = False
+            if need_flavors and ingredients_valid:
+                    flavors = find_flavors(ingredients)
+
         print('=============================- %s -=============================' % title)
         print("Pack: %s" % pack.pack)
+        print("Flavors: %s" % ", ".join(map(lambda flavor: flavor.capitalize(), flavors)))
         print("Old Labels: %s" % ", ".join(labels))
         print("Glass: %s\n" % glass.value.capitalize())
-        if(len(divided_text) == 3):
+        if len(divided_text) == 3:
             print(Style.GREEN + '-----0 Ingredients 0-----')
 
-            if first_correct:
-                ingredients = []
-                for ingredient in divided_text[0].split("\n"):
-                    ingredient = divide_ingredient(ingredient, first_correct)
-                    ingredients.append(ingredient)
-                    if ingredient.ingredient_type == Type.GARNISH:
-                        contains_garnish = True
-                    if ingredient.notes != "none":
-                        found_notes = True
-                    print(ingredient.print_with_errors())
-                if not found_notes:
-                    notes = find_notes(divided_text[1])
-                    for note in notes:
-                        print(note.print_with_errors())
-                        ingredients.append(note)
-                        divided_text[0] += "\n"
-                        divided_text[0] += note.print()
-                    found_notes = True
-                if not contains_garnish:
-                    garnishes = find_garnishes(divided_text[1])
-                    for garnish in garnishes:
-                        print(garnish.print_with_errors())
-                        ingredients.append(garnish)
-                        divided_text[0] += "\n"
-                        divided_text[0] += garnish.print()
-                    contains_garnish = True
-            else:
-                for ingredient in ingredients:
-                    print(ingredient.print_with_errors())
+            for ingredient in ingredients:
+                print(ingredient.print_with_errors())
 
-            first_correct = False
             print(Style.GREEN + '-----0 Ingredients 0-----\n')
             print('-----1 Instructions 1-----')
             print(divided_text[1])
@@ -926,15 +950,16 @@ def process_text_content(title, labels, text_content):
         print('Type number to modify that section')
         print('(C)ombine sections')
         print('(D)elete sections')
-        print('(S)wap sections')
+        print('S(W)ap sections')
         print('(M)ove section')
         print('(A)dd section')
         print('Create (N)ew recipe from sections')
         print('Modify (T)itle')
         print('Modify (P)ack')
+        print('Modify (F)lavors')
         print('Modify (I)ngredients')
         print('Modify (G)lass')
-        print('(F)inish and fix any red ingredients')
+        print('(S)ave and fix any red ingredients')
         print('(Q)uit without saving current recipe')
         selection = input('> ')
 
@@ -946,7 +971,7 @@ def process_text_content(title, labels, text_content):
                 divided_text = combine_sections(divided_text)
             elif selection.lower() == "d":
                 divided_text = delete_sections(divided_text)
-            elif selection.lower() == "s":
+            elif selection.lower() == "w":
                 divided_text = swap_sections(divided_text)
                 first_correct = True
                 contains_garnish = False
@@ -962,6 +987,9 @@ def process_text_content(title, labels, text_content):
                 title = edit_text(title)
             elif selection.lower() == "p":
                 pack = change_pack(pack)
+            elif selection.lower() == "f":
+                need_flavors = False
+                flavors = edit_flavors(flavors)
             elif selection.lower() == "i":
                 if(len(divided_text) != 3):
                     print("Must only contain 3 sections: ingredients, instructions, and source/information")
@@ -970,19 +998,15 @@ def process_text_content(title, labels, text_content):
                     divided_text[0] = "\n".join(list(map(lambda ingredient: ingredient.print(), ingredients)))
             elif selection.lower() == "g":
                 glass = change_glass(glass)
-            elif selection.lower() == "f":
+            elif selection.lower() == "s":
                 if len(divided_text) != 3:
                     print("Not finished creating sections for ingredients, instructions, and source/information")
                 else:
-                    valid = True
-                    for ingredient in ingredients:
-                        if not ingredient.validate():
-                            valid = False
-                            break
-                    if not valid:
+                    if not ingredients_valid:
                         ingredients = process_ingredients(ingredients)
                         divided_text[0] = "\n".join(list(map(lambda ingredient: ingredient.print(), ingredients)))
-                    return Recipe(title, ingredients, divided_text[1], divided_text[2], labels, pack, glass)
+                    else:
+                        return Recipe(title, ingredients, divided_text[1], divided_text[2], labels, pack, glass, flavors)
             elif selection.isnumeric():
                 index = int(selection)
                 if(index >= len(divided_text)):
@@ -992,8 +1016,11 @@ def process_text_content(title, labels, text_content):
                     first_correct = True
             else:
                 print("Invalid command")
-        except:
+        except Exception as e:
+            exc_type, exc_value, exc_traceback = sys.exc_info()
             logger.error("Error trying to process request.")
+            logger.error(e)
+            logger.error("".join(traceback.format_tb(exc_traceback)))
 
 def read_in_file(file_name):
     title = ""
@@ -1027,7 +1054,7 @@ def read_in_ingredient(file_name):
         
         if 'flavors' in data:
             for flavor in data['flavors']:
-                if Flavor.has_flavor(flavor):
+                if flavor in Flavors:
                     flavors.append(flavor)
         if 'name' in data:
             name = data['name']
