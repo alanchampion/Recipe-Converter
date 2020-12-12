@@ -11,6 +11,8 @@ import csv
 import re
 import random
 import difflib
+import time
+import datetime
 
 Measurements = ["oz", ".oz", "oz.", "ounce", "ounces", "ml", ".ml", 
 "ml.","tbsp", "tablespoon", "tablespoons", "tsp", "teaspoon", 
@@ -376,6 +378,13 @@ class Recipe:
 def color_text(text, style):
     return "%s%s%s" % (style, text, Style.RESET)
 
+def convert_timedelta(duration):
+    days, seconds = duration.days, duration.seconds
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds = (seconds % 60)
+    return days, hours, minutes, seconds
+
 def check_number(text):
     try:
         a = float(text)
@@ -614,15 +623,18 @@ def process_ingredients(ingredients):
 def edit_text(data):
     EDITOR = os.environ.get('EDITOR', 'vim')
 
-    with tempfile.NamedTemporaryFile(suffix=".tmp", dir=os.getcwd(), delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".tmp", dir=os.getcwd()) as tmp:
         tmp.write(data.encode('utf-8'))
         tmp.flush()
         call([EDITOR, "-n", tmp.name])
 
-        tmp.seek(0)
-        data = tmp.read().decode('utf-8').strip()
+        # For some reason, this does not remember changes made to file. 
+        # tmp.seek(0)
+        # data = tmp.read().decode('utf-8').strip()
+        file = open(tmp.name, "r")
+        data = file.read().strip()
         tmp.close()
-        os.unlink(tmp.name)
+    print(data)
 
     return data
 
@@ -643,7 +655,7 @@ def find_notes(text):
                 split_line = line.split()
                 for i in CurrentBar:
                     if i.name in line.lower():
-                        ingredient = i
+                        ingredient = i.name
                 for word in split_line:
                     if word.lower() in CurrentBar and need_ingredient:
                         ingredient = word.lower()
@@ -1084,12 +1096,33 @@ else:
 CurrentBar = Bar(ingredients)
 
 json_files = [pos_json for pos_json in os.listdir(os.getcwd()) if pos_json.endswith('.json')]
+
+times = []
+avg_time = 0
+est_time = 0
+num_files = len(json_files)
+
 for file_name in json_files:
+    start_time = time.time()
     try:
         recipe = read_in_file(file_name)
         if recipe is not None:
             Recipes.append(recipe)
         os.replace(file_name, "Finished/" + file_name)
+        
+        end_time = time.time()
+        print("%s took %.3f seconds" % (recipe.title, end_time-start_time))
+        
+        times.append(end_time-start_time)
+        avg_time = sum(times)/len(times)
+        print("Average time: %.3f seconds" % (avg_time))
+        print("%i files left" % num_files)
+        est_time = datetime.timedelta(seconds=(avg_time * num_files))
+        print("Estimated time to complete: %i days, %i hours, %i minutes, %i seconds" % convert_timedelta(est_time))
+
+        selection = input("Press enter to go to start next recipe")
+        if selection.lower() == "q":
+            exit()
     except SystemExit as e:
         print("Shutting down program")
         sys.exit()

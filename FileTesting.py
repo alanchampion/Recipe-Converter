@@ -50,4 +50,6 @@ with tempfile.NamedTemporaryFile(suffix=".tmp", dir=os.getcwd(), delete=False) a
     tmp.seek(0)
     print(tmp.read().decode('ascii'))
     tmp.close()
-    os.unlink(tmp.name)
+    file = open(tmp.name, "r")
+    print(file.read())
+    # os.unlink(tmp.name)
