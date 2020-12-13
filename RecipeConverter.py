@@ -19,7 +19,7 @@ Measurements = ["oz", ".oz", "oz.", "ounce", "ounces", "ml", ".ml",
 "teaspoons", "cup", "cups", "dash", "dashes", "drop", "drops", 
 "pint",  "pints", "liter", "liters", "inch", "g", "gram", "grams", 
 "twist", "peel", "wedge", "wedges", "wheel", "slice", 
-"slices", "sprig", "leaf", "leaves", "pinch", "piece", "pod", 
+"slices", "ribbon", "ribbons" "sprig", "leaf", "leaves", "pinch", "piece", "pod", 
 "grated", "rinse", "bottle", "bottles", "barspoon", 
 "barspoons", "piece", "pieces", "pound", "pounds", "lb", "lbs"]
 Measurement_Convert = {
@@ -35,6 +35,7 @@ Measurement_Convert = {
 "gram": ["gram", "grams", "g"],
 "wedge": ["wedge", "wedges"],
 "slice": ["slice", "slices"],
+"ribbon": ["ribbon", "ribbons"],
 "leaf": ["leaf", "leaves"],
 "bottle": ["bottle", "bottles"],
 "barspoon": ["barspoon", "barspoons"],
@@ -84,9 +85,10 @@ class Pack(Enum):
 
 class Glass(Enum):
     ROCK = "rocks"
-    COLLINS = "tom collins"
+    COLLINS = "collins"
     COLLINS2 = "highball"
     COUPE = "coupe"
+    NANDN = "nick and nora"
     TIKI1 = "tiki"
     TIKI2 = "tiki"
     PILSNER = "pilsner"
@@ -807,7 +809,7 @@ def find_pack(labels, text_content):
     return Pack.MYDRINKS
 
 def find_glass(labels, text_content):
-    new_glass = Glass.ROCK
+    new_glass = Glass.NONE
 
     if "Tiki" in labels:
         new_glass = random.choice([Glass.TIKI1, Glass.TIKI2])
@@ -1112,7 +1114,6 @@ for file_name in json_files:
         
         end_time = time.time()
         print("%s took %.3f seconds" % (recipe.title, end_time-start_time))
-        
         times.append(end_time-start_time)
         avg_time = sum(times)/len(times)
         print("Average time: %.3f seconds" % (avg_time))
