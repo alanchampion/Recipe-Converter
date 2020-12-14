@@ -19,13 +19,13 @@ Measurements = ["oz", ".oz", "oz.", "ounce", "ounces", "ml", ".ml",
 "teaspoons", "cup", "cups", "dash", "dashes", "drop", "drops", 
 "pint",  "pints", "liter", "liters", "inch", "g", "gram", "grams", 
 "twist", "peel", "wedge", "wedges", "wheel", "slice", 
-"slices", "ribbon", "ribbons" "sprig", "leaf", "leaves", "pinch", "piece", "pod", 
+"slices", "ribbon", "ribbons", "sprig", "leaf", "leaves", "pinch", "piece", "pod", 
 "grated", "rinse", "bottle", "bottles", "barspoon", 
 "barspoons", "piece", "pieces", "pound", "pounds", "lb", "lbs"]
 Measurement_Convert = {
 "oz": ["oz", ".oz", "oz.", "ounce", "ounces"],
 "ml": ["ml", ".ml", "ml."],
-"tbsp": ["tbsp", "tablespoon", "tablespoons"],
+"tbsp": ["tbs", "tbsp", "tablespoon", "tablespoons"],
 "tsp": ["tsp", "teaspoon", "teaspoons"],
 "cup": ["cup", "cups"],
 "dash": ["dash", "dashes"],
@@ -436,6 +436,9 @@ def divide_ingredient(ingredient_text, set_type=False):
     ingredient_type = Type.MAIN
     notes = "none"
 
+    if "mint sprig" in ingredient_text:
+        ingredient_text = ingredient_text.replace("mint sprig", "sprig mint")
+
     if set_type:
         for word in Garnish_Words:
             if word in ingredient_text:
@@ -473,7 +476,7 @@ def divide_ingredient(ingredient_text, set_type=False):
     
     if len(divided_ingredient) == 2 and divided_ingredient[-1] in Garnish_Words:
         return Ingredient(1, divided_ingredient[1], divided_ingredient[0], ingredient_type)
-
+    
     if len(divided_ingredient) > 3 and divided_ingredient[0].isdigit() and divided_ingredient[1] == "/" and divided_ingredient[2].isdigit():
         divided_ingredient = [str(int(divided_ingredient[0])/int(divided_ingredient[2]))] + temp[3:]
 
@@ -504,6 +507,7 @@ def divide_ingredient(ingredient_text, set_type=False):
     number = " ".join(divided_ingredient[:number_index+1])
     measurement = " ".join(divided_ingredient[number_index+1:measurement_index+1])
     fixed_measurement = check_measurement(measurement)
+    
     if fixed_measurement:
         measurement = fixed_measurement
     if need_measurement:
@@ -517,6 +521,7 @@ def divide_ingredient(ingredient_text, set_type=False):
         measurement = "oz"
 
     number = format_number(number)
+
     return Ingredient(number, measurement, ingredient, ingredient_type, notes)
 
 def delete_ingredients(divided_ingredients):
@@ -671,6 +676,7 @@ def find_notes(text):
                 if ingredient:
                     ingredient = Ingredient(amount, measurement, ingredient, Type.MAIN, note)
                     notes.append(ingredient)
+                    ingredient = ""
     return notes
 
 def find_garnishes(text):
@@ -1113,6 +1119,7 @@ for file_name in json_files:
         os.replace(file_name, "Finished/" + file_name)
         
         end_time = time.time()
+        num_files = num_files-1
         print("%s took %.3f seconds" % (recipe.title, end_time-start_time))
         times.append(end_time-start_time)
         avg_time = sum(times)/len(times)
