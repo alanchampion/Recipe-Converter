@@ -17,7 +17,7 @@ import datetime
 Measurements = ["oz", ".oz", "oz.", "ounce", "ounces", "ml", ".ml", 
 "ml.","tbsp", "tablespoon", "tablespoons", "tsp", "teaspoon", 
 "teaspoons", "cup", "cups", "dash", "dashes", "drop", "drops", 
-"pint",  "pints", "liter", "liters", "inch", "g", "gram", "grams", 
+"quart", "quarts", "pint",  "pints", "liter", "liters", "inch", "g", "gram", "grams", 
 "twist", "peel", "wedge", "wedges", "wheel", "slice", 
 "slices", "ribbon", "ribbons", "sprig", "leaf", "leaves", "pinch", "piece", "pod", 
 "grated", "rinse", "bottle", "bottles", "barspoon", 
@@ -30,6 +30,7 @@ Measurement_Convert = {
 "cup": ["cup", "cups"],
 "dash": ["dash", "dashes"],
 "drop": ["drop", "drops"],
+"quart": ["quart", "quarts"],
 "pint": ["pint", "pints"],
 "liter": ["liter", "liters"],
 "gram": ["gram", "grams", "g"],
@@ -42,7 +43,8 @@ Measurement_Convert = {
 "piece": ["pieces", "piece"],
 "pound": ["pound", "pounds", "lb", "lbs"]
 }
-Filler_Words = ["of", "with", "fresh", "freshly", "1:1", "()", "/{/}", "[]"]
+Filler_Words = ["of", "with", "fresh", "freshly", "1:1"]
+Empty_Brackets = ["()", "/{/}", "[]"]
 Garnish_Words = ["twist", "garnish", "peel", "wheel", "slice", "wedge", "sprig", "pod", "grated"]
 Note_Words = ["top", "float", "rinse", "none"]
 Flavors = ["bitter", "creamy", "dry", "fresh", "herbal", "hot", "savory", "smoky", "spicy", "strong", "sweet", "tart"]
@@ -469,7 +471,9 @@ def divide_ingredient(ingredient_text, set_type=False):
             ingredient_type = Type.OPTIONAL
             ingredient_text = ingredient_text.replace("optional", "")
     temp = ingredient_text.split(" ")
-    temp = [i.lower() for i in temp if i not in Filler_Words]
+    temp = [i.lower() for i in temp if i not in Empty_Brackets]
+    if set_type:
+        temp = [i.lower() for i in temp if i not in Filler_Words]
     divided_ingredient = []
     for item in temp:
         divided_ingredient.extend(re.findall(r"[0-9.]+|[^0-9]+", item))
@@ -517,10 +521,15 @@ def divide_ingredient(ingredient_text, set_type=False):
     ingredient = remove_measurement(ingredient)
 
     if notes.lower() == "top" and not number:
-        number = "1"
+        number = "2"
         measurement = "oz"
 
     number = format_number(number)
+
+    if ingredient in Measurements:
+        garnish_word = ingredient
+        ingredient = measurement.replace(" " + ingredient, "").strip()
+        measurement = garnish_word
 
     return Ingredient(number, measurement, ingredient, ingredient_type, notes)
 
