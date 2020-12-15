@@ -18,9 +18,9 @@ Measurements = ["oz", ".oz", "oz.", "ounce", "ounces", "ml", ".ml",
 "ml.","tbsp", "tablespoon", "tablespoons", "tsp", "teaspoon", 
 "teaspoons", "cup", "cups", "dash", "dashes", "drop", "drops", 
 "quart", "quarts", "pint",  "pints", "liter", "liters", "inch", "g", "gram", "grams", 
-"twist", "peel", "wedge", "wedges", "wheel", "slice", 
+"twist", "peel", "wedge", "wedges", "wheel", "slice", "spray", 
 "slices", "ribbon", "ribbons", "sprig", "leaf", "leaves", "pinch", "piece", "pod", 
-"grated", "rinse", "bottle", "bottles", "barspoon", 
+"grated", "rinse", "bottle", "bottles", "barspoon",
 "barspoons", "piece", "pieces", "pound", "pounds", "lb", "lbs"]
 Measurement_Convert = {
 "oz": ["oz", ".oz", "oz.", "ounce", "ounces"],
@@ -71,6 +71,14 @@ class Type:
     GARNISH = "garnish"
     OPTIONAL = "optional"
 
+def get_type(str_type):
+    if str_type == str(Type.MAIN):
+        return Type.MAIN
+    if str_type == str(Type.GARNISH):
+        return Type.GARNISH
+    if str_optional == str(Type.OPTIONAL):
+        return Type.OPTIONAL
+
 class Pack(Enum):
     NONALCOHOLIC = ("Nonalcoholic", 0)
     GROUP = ("Group", 1)
@@ -84,6 +92,24 @@ class Pack(Enum):
     def __init__(self, pack, importance):
         self.pack = pack
         self.importance = importance
+
+def get_pack(pack):
+    if pack == Pack.NONALCOHOLIC.pack:
+        return Pack.NONALCOHOLIC
+    if pack == Pack.GROUP.pack:
+        return Pack.GROUP
+    if pack == Pack.NIGHTCAP.pack:
+        return Pack.NIGHTCAP
+    if pack == Pack.DESSERT.pack:
+        return Pack.DESSERT
+    if pack == Pack.BRUNCH.pack:
+        return Pack.BRUNCH
+    if pack == Pack.TIKI.pack:
+        return Pack.TIKI
+    if pack == Pack.DINNER.pack:
+        return Pack.DINNER
+    if pack == Pack.MYDRINKS.pack:
+        return Pack.MYDRINKS
 
 class Glass(Enum):
     ROCK = "rocks"
@@ -100,6 +126,35 @@ class Glass(Enum):
     CHAMPAGNE = "flute"
     COCKTAIL = "cocktail"
     NONE = "none"
+
+def get_glass(glass):
+    if glass == Glass.ROCK.value:
+        return Glass.ROCK
+    if glass == Glass.COLLINS.value:
+        return Glass.COLLINS
+    if glass == Glass.COLLINS2.value:
+        return Glass.COLLINS2
+    if glass == Glass.COUPE.value:
+        return Glass.COUPE
+    if glass == Glass.NANDN.value:
+        return Glass.NANDN
+    if glass == Glass.TIKI1.value:
+        return Glass.TIKI1
+    if glass == Glass.TIKI2.value:
+        return Glass.TIKI2
+    if glass == Glass.PILSNER.value:
+        return Glass.PILSNER
+    if glass == Glass.PINT.value:
+        return Glass.PINT
+    if glass == Glass.MUG.value:
+        return Glass.MUG
+    if glass == Glass.IRISHCOFFEE.value:
+        return Glass.IRISHCOFFEE
+    if glass == Glass.CHAMPAGNE.value:
+        return Glass.CHAMPAGNE
+    if glass == Glass.COCKTAIL.value:
+        return Glass.COCKTAIL
+    return Glass.NONE
 
 class Bottle:
     def __init__(self, name, flavors):
@@ -369,18 +424,90 @@ class Recipe:
         file = folder + '/' + self.title.replace(" ", "") + ".json"
 
         while os.path.exists(file):
-            print("The file %s already exists. Do you want to (r)eplace the file or create (n)ew?" % file)
+            print("The file %s already exists. Do you want to (c)ompare the files, (r)eplace the file, or create (n)ew?" % file)
             selection = input("> ")
             if selection.lower() == 'r':
                 os.remove(file)
-            else:
+            elif selection.lower() == 'n':
                 name = input('New name: ')
                 file = folder + '/' + name.replace(" ", "") + ".json"
+            else:
+                old_recipe = create_from_file(file)
+                print_side_by_side(file, self.title)
+                print_side_by_side(old_recipe, self)
         with codecs.open(file, encoding='utf-8', mode='w') as outfile:
             json.dump(data, outfile)
 
+def create_from_file(file_name):
+    new_recipe = Recipe("", [], "", "", [], "", "", [])
+
+    with codecs.open(file_name, encoding='utf-8') as json_file:
+        data = json.load(json_file)
+        
+        if 'title' in data:
+            new_recipe.title = data['title']
+        if 'pack' in data:
+            pack = data['pack']
+            new_recipe.pack = get_pack(pack)
+        if 'flavors' in data:
+            new_recipe.flavors = data['flavors']
+        if 'labels' in data:
+            new_recipe.labels = data['labels']
+        if 'glass' in data:
+            glass = data['glass']
+            new_recipe.glass = get_glass(glass)
+        else:
+            new_recipe.glass = Glass.NONE
+        if 'instructions' in data:
+            new_recipe.instructions = data['instructions']
+        if 'information' in data:
+            new_recipe.information = data['information']
+        if 'ingredients' in data:
+            for ingredient in data['ingredients']:
+                amount = ""
+                measurement = ""
+                name = ""
+                ingredient_type = ""
+                notes = ""
+
+                if 'amount' in ingredient:
+                    amount = ingredient['amount']
+                if 'measurement' in ingredient:
+                    measurement = ingredient['measurement']
+                if 'ingredient' in ingredient:
+                    name = ingredient['ingredient']
+                if 'type' in ingredient:
+                    ingredient_type = ingredient['type']
+                    ingredient_type = get_type(ingredient_type)
+                if 'notes' in ingredient:
+                    notes = ingredient['notes']
+                add_ingredient = Ingredient(amount, measurement, name, ingredient_type, notes)
+                new_recipe.ingredients.append(add_ingredient)
+        json_file.close()
+    return new_recipe
+
 def color_text(text, style):
     return "%s%s%s" % (style, text, Style.RESET)
+
+def print_side_by_side(left, right, size=75, space=4):
+    a = str(left).strip()
+    b = str(right).strip()
+    a_size = size
+    b_size = size
+
+    while a or b:
+        a_find = a.find("\n")
+        b_find = b.find("\n")
+
+        if a_find < a_size and a_find != -1:
+            a_size = a_find
+        if b_find < b_size and b_find != -1:
+            b_size = b_find
+        print(a[:a_size].ljust(size) + " " * space + b[:b_size])
+        a = a[a_size:].strip()
+        b = b[b_size:].strip()
+        a_size = size
+        b_size = size
 
 def convert_timedelta(duration):
     days, seconds = duration.days, duration.seconds
