@@ -27,7 +27,7 @@ def add_ingredient_from_file(file_name, cursor):
             dictionary_flavors = Counter(data['flavors'])
         else:
             print("%s does not have flavors." % ingredient_file.name)
-    
+
     if name != "none" and name not in ingredients:
         ingredients.add(name)
         cursor.execute("INSERT INTO ingredient (name) VALUES (?);", [name])
@@ -38,9 +38,9 @@ def add_ingredient_from_file(file_name, cursor):
                 # print("Should add %s into database" % flavor)
                 cursor.execute("INSERT INTO flavor (name) VALUES (?)", [flavor])
                 flavors.add(flavor)
-            cursor.execute("SELECT id FROM flavor WHERE name=?", [flavor])
+            cursor.execute("SELECT rowid FROM flavor WHERE name=?", [flavor])
             flavor_id = cursor.fetchone()[0]
-            cursor.execute("""INSERT INTO ingredient_flavor (ingredient_id, flavor_id, amount) 
+            cursor.execute("""INSERT INTO ingredient_flavor (ingredient_id, flavor_id, amount)
                 VALUES ('%i', '%i', '%i')""" % (ingredient_id, flavor_id, amount))
 
 def add_recipe_from_file(file_name, cursor):
@@ -89,20 +89,22 @@ def add_recipe_from_file(file_name, cursor):
             ingredients = data['ingredients']
         else:
             print("%s does not have ingredients." % recipe_file.name)
-    
+
     if title != "none":
         if glass not in glasses:
             cursor.execute("INSERT INTO glass (name) VALUES (?);", [glass])
             glasses.add(glass)
-        cursor.execute("SELECT id FROM glass WHERE name=?", [glass])
+        cursor.execute("SELECT rowid FROM glass WHERE name=?", [glass])
         glass_id = cursor.fetchone()[0]
         if category not in categories:
             cursor.execute("INSERT INTO category (name) VALUES (?);", [category])
             categories.add(category)
-        cursor.execute("SELECT id FROM category WHERE name=?", [category])
+        cursor.execute("SELECT rowid FROM category WHERE name=?", [category])
         category_id = cursor.fetchone()[0]
 
-        cursor.execute("INSERT INTO recipe (title, category, glass, instructions, information) VALUES (?,?,?,?,?);", 
+        cursor.execute("INSERT INTO recipe_title (title) VALUES (?);", [title])
+        title_id = cursor.lastrowid
+        cursor.execute("INSERT INTO recipe (title_id, category, glass, instructions, information) VALUES (?,?,?,?,?);",
             [title, category_id, glass_id, instructions, information])
         recipe_id = cursor.lastrowid
 
@@ -111,9 +113,9 @@ def add_recipe_from_file(file_name, cursor):
                 # print("Should add %s into database" % flavor)
                 cursor.execute("INSERT INTO flavor (name) VALUES (?)", [flavor])
                 flavors.add(flavor)
-            cursor.execute("SELECT id FROM flavor WHERE name=?", [flavor])
+            cursor.execute("SELECT rowid FROM flavor WHERE name=?", [flavor])
             flavor_id = cursor.fetchone()[0]
-            cursor.execute("""INSERT INTO recipe_flavor (recipe_id, flavor_id) 
+            cursor.execute("""INSERT INTO recipe_flavor (recipe_id, flavor_id)
                 VALUES (?,?)""", [recipe_id, flavor_id])
 
         if ingredients:
@@ -130,7 +132,7 @@ def add_recipe_from_file(file_name, cursor):
                 if 'ingredient' in ingredient:
                     name = ingredient['ingredient']
 
-                    cursor.execute("SELECT id FROM ingredient WHERE name=?", [name])
+                    cursor.execute("SELECT rowid FROM ingredient WHERE name=?", [name])
                     ingredient_id = cursor.fetchone()[0]
                 else:
                     print("%s does not have ingredient name for an ingredient" % (recipe_file.name))
@@ -142,11 +144,11 @@ def add_recipe_from_file(file_name, cursor):
 
                 if 'measurement' in ingredient:
                     unit = ingredient['measurement']
-                    
+
                     if unit not in units:
                         units.add(unit)
                         cursor.execute("INSERT INTO unit (name) VALUES (?)", [unit])
-                    cursor.execute("SELECT id FROM unit WHERE name=?", [unit])
+                    cursor.execute("SELECT rowid FROM unit WHERE name=?", [unit])
                     unit_id = cursor.fetchone()[0]
                 else:
                     print("%s does not have measurement for ingredient %s." % (recipe_file.name, name))
@@ -157,7 +159,7 @@ def add_recipe_from_file(file_name, cursor):
                     if itype not in types:
                         types.add(itype)
                         cursor.execute("INSERT INTO type (name) VALUES (?)", [itype])
-                    cursor.execute("SELECT id FROM type WHERE name=?", [itype])
+                    cursor.execute("SELECT rowid FROM type WHERE name=?", [itype])
                     type_id = cursor.fetchone()[0]
                 else:
                     print("%s does not have itype for ingredient %s." % (recipe_file.name, name))
@@ -170,11 +172,11 @@ def add_recipe_from_file(file_name, cursor):
                     pass#print("%s does not have notes for ingredient %s." % (recipe_file.name, name))
 
                 if ingredient_id != -1 or unit_id != -1 or type_id != -1:
-                    cursor.execute("""INSERT INTO recipe_ingredient (ingredient, amount, unit, type, notes) 
+                    cursor.execute("""INSERT INTO recipe_ingredient (ingredient, amount, unit, type, notes)
                         VALUES (?,?,?,?,?)""", [ingredient_id,amount,unit_id,type_id,notes])
                     recipe_ingredient_id = cursor.lastrowid
 
-                    cursor.execute("""INSERT INTO recipe_recipe_ingredient (recipe_id, recipe_ingredient_id) 
+                    cursor.execute("""INSERT INTO recipe_recipe_ingredient (recipe_id, recipe_ingredient_id)
                         VALUES (?,?)""", [recipe_id, recipe_ingredient_id])
                 else:
                     print("Unable to add ingredient %s. ingredient_id = %i, unit_id = %i, type_id = %i" % (name, ingredient_id, unit_id, type_id))
@@ -183,10 +185,10 @@ try:
     connection = sqlite3.connect("cocktailbar.db")
     cursor = connection.cursor()
 
-    #Ingredients 
+    #Ingredients
     cursor.execute('''DROP TABLE IF EXISTS ingredient''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ingredient (
-        id INTEGER PRIMARY KEY, 
+        rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
@@ -198,7 +200,8 @@ try:
         PRIMARY KEY (ingredient_id, substitution_id))''')
 
     cursor.execute('''DROP TABLE IF EXISTS flavor''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS flavor (id INTEGER PRIMARY KEY, name TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS flavor (
+        rowid INTEGER PRIMARY KEY, name TEXT)''')
     connection.commit()
 
     cursor.execute('''DROP TABLE IF EXISTS ingredient_flavor''')
@@ -206,28 +209,32 @@ try:
         ingredient_id INTEGER,
         flavor_id INTEGER,
         amount INTEGER,
-        FOREIGN KEY (ingredient_id) REFERENCES ingredient(id), 
-        FOREIGN KEY (flavor_id) REFERENCES flavor(id), 
+        FOREIGN KEY (ingredient_id) REFERENCES ingredient(id),
+        FOREIGN KEY (flavor_id) REFERENCES flavor(id),
         PRIMARY KEY (ingredient_id, flavor_id))''')
     connection.commit()
 
     # Recipes
     cursor.execute('''DROP TABLE IF EXISTS glass''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS glass (
-        id INTEGER PRIMARY KEY, 
+        rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
     cursor.execute('''DROP TABLE IF EXISTS category''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS category (
-        id INTEGER PRIMARY KEY, 
+        rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
+    cursor.execute('DROP TABLE IF EXISTS recipe_title')
+    cursor.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS recipe_title
+        USING FTS5(title)''')
+
     cursor.execute('''DROP TABLE IF EXISTS recipe''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe (
-        id INTEGER PRIMARY KEY, 
-        title TEXT, 
+        rowid INTEGER PRIMARY KEY,
+        title_id INTEGER,
         category INTEGER,
         glass INTEGER,
         instructions TEXT,
@@ -241,28 +248,28 @@ try:
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe_flavor (
         recipe_id INTEGER,
         flavor_id INTEGER,
-        FOREIGN KEY (recipe_id) REFERENCES ingredient(id), 
-        FOREIGN KEY (flavor_id) REFERENCES flavor(id), 
+        FOREIGN KEY (recipe_id) REFERENCES ingredient(id),
+        FOREIGN KEY (flavor_id) REFERENCES flavor(id),
         PRIMARY KEY (recipe_id, flavor_id))''')
     connection.commit()
 
     #recipe_ingredient
     cursor.execute('''DROP TABLE IF EXISTS unit''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS unit (
-        id INTEGER PRIMARY KEY, 
+        rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
     cursor.execute('''DROP TABLE IF EXISTS type''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS type (
-        id INTEGER PRIMARY KEY, 
+        rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
     cursor.execute('''DROP TABLE IF EXISTS recipe_ingredient''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe_ingredient (
-        id INTEGER PRIMARY KEY, 
-        ingredient INTEGER, 
+        rowid INTEGER PRIMARY KEY,
+        ingredient INTEGER,
         amount NUMBER,
         unit INTEGER,
         type INTEGER,
@@ -277,8 +284,8 @@ try:
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe_recipe_ingredient (
         recipe_id INTEGER,
         recipe_ingredient_id INTEGER,
-        FOREIGN KEY (recipe_id) REFERENCES ingredient(id), 
-        FOREIGN KEY (recipe_ingredient_id) REFERENCES recipe_ingredient(id), 
+        FOREIGN KEY (recipe_id) REFERENCES ingredient(id),
+        FOREIGN KEY (recipe_ingredient_id) REFERENCES recipe_ingredient(id),
         PRIMARY KEY (recipe_id, recipe_ingredient_id))''')
     connection.commit()
 
@@ -303,73 +310,73 @@ finally:
         print("The SQLite connection is closed")
 
 # Get the ingredients
-# SELECT ingredient.name, flavor.name, ingredient_flavor.amount FROM ingredient 
-#   JOIN ingredient_flavor ON ingredient.id = ingredient_flavor.ingredient_id 
-#   JOIN flavor ON flavor.id = ingredient_flavor.flavor_id;
+# SELECT ingredient.name, flavor.name, ingredient_flavor.amount FROM ingredient
+#   JOIN ingredient_flavor ON ingredient.rowid = ingredient_flavor.ingredient_id
+#   JOIN flavor ON flavor.rowid = ingredient_flavor.flavor_id;
 
 # Get the recipes without ingredients
-# SELECT recipe.title, GROUP_CONCAT(flavor.name) as flavors, category.name, glass.name, recipe.instructions, recipe.information 
-#   FROM recipe 
-#   JOIN recipe_flavor ON recipe.id = recipe_flavor.recipe_id 
-#   JOIN flavor ON flavor.id = recipe_flavor.flavor_id 
-#   JOIN glass ON recipe.glass = glass.id 
-#   JOIN category ON recipe.category = category.id 
+# SELECT recipe.title, GROUP_CONCAT(flavor.name) as flavors, category.name, glass.name, recipe.instructions, recipe.information
+#   FROM recipe
+#   JOIN recipe_flavor ON recipe.rowid = recipe_flavor.recipe_id
+#   JOIN flavor ON flavor.rowid = recipe_flavor.flavor_id
+#   JOIN glass ON recipe.glass = glass.rowid
+#   JOIN category ON recipe.category = category.rowid
 #   WHERE recipe.title = 'Old Fashioned';
 
 # Get the full recipe, ingredients concatinated
-# SELECT recipe.title, GROUP_CONCAT(DISTINCT flavors.name), category.name, glass.name, 
+# SELECT recipe.title, GROUP_CONCAT(DISTINCT flavors.name), category.name, glass.name,
 #    GROUP_CONCAT(DISTINCT ingredients.ingredient), recipe.instructions, recipe.information
 #    FROM (
 #        SELECT * FROM recipe WHERE recipe.title = 'Old Fashioned'
 #    ) AS recipe
 #    JOIN (
-#        SELECT recipe.id as recipe_id, flavor.name as name FROM recipe
-#        JOIN recipe_flavor ON recipe.id = recipe_flavor.recipe_id 
-#        JOIN flavor ON flavor.id = recipe_flavor.flavor_id 
-#    ) AS flavors ON recipe.id = flavors.recipe_id
-#    JOIN glass ON recipe.glass = glass.id 
-#    JOIN category ON recipe.category = category.id 
+#        SELECT recipe.rowid as recipe_id, flavor.name as name FROM recipe
+#        JOIN recipe_flavor ON recipe.rowid = recipe_flavor.recipe_id
+#        JOIN flavor ON flavor.rowid = recipe_flavor.flavor_id
+#    ) AS flavors ON recipe.rowid = flavors.recipe_id
+#    JOIN glass ON recipe.glass = glass.rowid
+#    JOIN category ON recipe.category = category.rowid
 #    JOIN (
-#        SELECT recipe.id as recipe_id, type.name || ': ' || recipe_ingredient.amount || 
-#        ' ' || unit.name || ' ' || ingredient.name || ' (' || recipe_ingredient.notes || ')' as ingredient FROM recipe 
-#        JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_id = recipe.id
-#        JOIN recipe_ingredient on recipe_ingredient.id = recipe_recipe_ingredient.recipe_ingredient_id
-#        JOIN ingredient on ingredient.id = recipe_ingredient.ingredient
-#        JOIN unit on unit.id = recipe_ingredient.unit
-#        JOIN type on type.id = recipe_ingredient.type
+#        SELECT recipe.rowid as recipe_id, type.name || ': ' || recipe_ingredient.amount ||
+#        ' ' || unit.name || ' ' || ingredient.name || ' (' || recipe_ingredient.notes || ')' as ingredient FROM recipe
+#        JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_id = recipe.rowid
+#        JOIN recipe_ingredient on recipe_ingredient.rowid = recipe_recipe_ingredient.recipe_ingredient_id
+#        JOIN ingredient on ingredient.rowid = recipe_ingredient.ingredient
+#        JOIN unit on unit.rowid = recipe_ingredient.unit
+#        JOIN type on type.rowid = recipe_ingredient.type
 #        WHERE recipe.title = 'Old Fashioned'
-#    ) AS ingredients ON recipe.id = ingredients.recipe_id
+#    ) AS ingredients ON recipe.rowid = ingredients.recipe_id
 
 # Get the full recipe, ingredients seperate
-# SELECT recipe.title, flavors.name, category.name, glass.name, 
-#     ingredients.name, ingredients.amount, ingredients.unit, ingredients.type, 
+# SELECT recipe.title, flavors.name, category.name, glass.name,
+#     ingredients.name, ingredients.amount, ingredients.unit, ingredients.type,
 #     ingredients.notes, recipe.instructions, recipe.information
 #     FROM (
 #         SELECT * FROM recipe WHERE recipe.title = 'Old Fashioned'
 #     ) AS recipe
 #     JOIN (
-#         SELECT recipe.id as recipe_id, GROUP_CONCAT(flavor.name) as name FROM recipe
-#         JOIN recipe_flavor ON recipe.id = recipe_flavor.recipe_id 
-#         JOIN flavor ON flavor.id = recipe_flavor.flavor_id 
+#         SELECT recipe.rowid as recipe_id, GROUP_CONCAT(flavor.name) as name FROM recipe
+#         JOIN recipe_flavor ON recipe.rowid = recipe_flavor.recipe_id
+#         JOIN flavor ON flavor.rowid = recipe_flavor.flavor_id
 #         WHERE recipe.title = 'Old Fashioned'
-#     ) AS flavors ON recipe.id = flavors.recipe_id
-#     JOIN glass ON recipe.glass = glass.id 
-#     JOIN category ON recipe.category = category.id 
+#     ) AS flavors ON recipe.rowid = flavors.recipe_id
+#     JOIN glass ON recipe.glass = glass.rowid
+#     JOIN category ON recipe.category = category.rowid
 #     JOIN (
-#         SELECT recipe.id as recipe_id, GROUP_CONCAT(ingredient.name, ';') as name, GROUP_CONCAT(unit.name, ';') as unit, 
-#             GROUP_CONCAT(recipe_ingredient.amount, ';') as amount, GROUP_CONCAT(type.name, ';') as type, 
-#             GROUP_CONCAT(recipe_ingredient.notes, ';') as notes FROM recipe 
-#         JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_id = recipe.id
-#         JOIN recipe_ingredient on recipe_ingredient.id = recipe_recipe_ingredient.recipe_ingredient_id
-#         JOIN ingredient on ingredient.id = recipe_ingredient.ingredient
-#         JOIN unit on unit.id = recipe_ingredient.unit
-#         JOIN type on type.id = recipe_ingredient.type
+#         SELECT recipe.rowid as recipe_id, GROUP_CONCAT(ingredient.name, ';') as name, GROUP_CONCAT(unit.name, ';') as unit,
+#             GROUP_CONCAT(recipe_ingredient.amount, ';') as amount, GROUP_CONCAT(type.name, ';') as type,
+#             GROUP_CONCAT(recipe_ingredient.notes, ';') as notes FROM recipe
+#         JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_id = recipe.rowid
+#         JOIN recipe_ingredient on recipe_ingredient.rowid = recipe_recipe_ingredient.recipe_ingredient_id
+#         JOIN ingredient on ingredient.rowid = recipe_ingredient.ingredient
+#         JOIN unit on unit.rowid = recipe_ingredient.unit
+#         JOIN type on type.rowid = recipe_ingredient.type
 #         WHERE recipe.title = 'Old Fashioned'
-#     ) AS ingredients ON recipe.id = ingredients.recipe_id
+#     ) AS ingredients ON recipe.rowid = ingredients.recipe_id
 
 # Get recipe's that include a specific ingredient
-# SELECT recipe.id, recipe.title FROM ingredient
-#     JOIN recipe_ingredient ON recipe_ingredient.ingredient = ingredient.id
-#     JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_ingredient_id = recipe_ingredient.id
-#     JOIN recipe ON recipe.id = recipe_recipe_ingredient.recipe_id
+# SELECT recipe.rowid, recipe.title FROM ingredient
+#     JOIN recipe_ingredient ON recipe_ingredient.ingredient = ingredient.rowid
+#     JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_ingredient_id = recipe_ingredient.rowid
+#     JOIN recipe ON recipe.rowid = recipe_recipe_ingredient.recipe_id
 #     WHERE ingredient.name = 'bourbon';
