@@ -2,6 +2,7 @@ import sqlite3
 import traceback
 import re
 from enum import Enum
+import readline
 
 class Ingredient:
     def __init__(self, name):
@@ -20,7 +21,7 @@ class Recipe_Ingredient:
         if self.type and self.type.lower() != "main":
             string += self.type + ": "
         if self.amount:
-            string += self.amount + " "
+            string += str(self.amount) + " "
         if self.unit:
             string += self.unit + " "
         if self.name:
@@ -45,11 +46,11 @@ class Recipe:
         string += "Category: " + self.category + "\n"
         string += "Flavors: " + ", ".join(self.flavors) + "\n"
         if self.glass.lower() != "none":
-            string += "Glass: " + self.glass.capitalize() + "\n\n"
+            string += "Glass: " + self.glass.capitalize() + "\n"
         for ingredient in self.recipe_ingredients:
-            string += str(ingredient) + "\n"
-        string += "\n" + self.instructions + "\n\n"
-        string += self.information + "\n"
+            string += "\n" + str(ingredient)
+        string += "\n\n" + self.instructions + "\n"
+        string += "\n" + self.information + "\n"
         string += "--------------------"
         return string
 
@@ -70,73 +71,104 @@ def string_front_found(string1, string2):
         return True
     return False
 
-def show_recipe_from_id(cursor, id):
-    cursor.execute("""SELECT recipe.title, flavors.name, category.name, glass.name,
-        ingredients.name, ingredients.amount, ingredients.unit, ingredients.type,
-        ingredients.notes, recipe.instructions, recipe.information
-        FROM (
-            SELECT * FROM recipe WHERE recipe.rowid = ?
-        ) AS recipe
-        JOIN (
-            SELECT recipe.rowid AS recipe_id, GROUP_CONCAT(flavor.name, ';') AS name FROM recipe
-            JOIN recipe_flavor ON recipe.rowid = recipe_flavor.recipe_id
-            JOIN flavor ON flavor.rowid = recipe_flavor.flavor_id
-            WHERE recipe.rowid = ?
-        ) AS flavors ON recipe.rowid = flavors.recipe_id
+def get_ingredients_from_recipe_ids(cursor, recipe_ids):
+    if len(recipe_ids) == 0:
+        print("No recipes specified")
+        return {}
+
+    where_statement = "recipe_recipe_ingredient.recipe_id = ? OR " * len(recipe_ids)
+    where_statement = where_statement[:-3]
+    query = """SELECT recipe_recipe_ingredient.recipe_id, recipe_ingredient.amount, unit.name,
+        ingredient.name, type.name,recipe_ingredient.notes FROM recipe_recipe_ingredient
+        JOIN recipe_ingredient ON recipe_ingredient.rowid = recipe_recipe_ingredient.recipe_ingredient_id
+        JOIN ingredient ON ingredient.rowid = recipe_ingredient.ingredient
+        JOIN unit ON unit.rowid = recipe_ingredient.unit
+        JOIN type ON type.rowid = recipe_ingredient.type
+        WHERE """ + where_statement + """;"""
+    ingredient_rows = cursor.execute(query, recipe_ids)
+    ingredient_rows = list(ingredient_rows)
+
+    recipe_ingredients = {}
+    for ingredient in ingredient_rows:
+        if ingredient[0] not in recipe_ingredients:
+            recipe_ingredients[ingredient[0]] = []
+        amount = ingredient[1]
+        unit = ingredient[2]
+        name = ingredient[3]
+        itype = ingredient[4]
+        notes = ingredient[5]
+        recipe_ingredients[ingredient[0]].append(Recipe_Ingredient(name, amount, unit, itype, notes))
+    return recipe_ingredients
+
+def get_recipe_from_ids(cursor, ids):
+    if len(ids) == 0:
+        print("No recipes specified")
+        return []
+
+    where_statement = "recipe.rowid = ? OR " * len(ids)
+    where_statement = where_statement[:-3]
+    query = """SELECT recipe.rowid, recipe.title, category.name, GROUP_CONCAT(flavor.name, ';'),
+        glass.name, recipe.instructions, recipe.information
+        FROM recipe
+        JOIN recipe_flavor ON recipe.rowid = recipe_flavor.recipe_id
+        JOIN flavor ON flavor.rowid = recipe_flavor.flavor_id
         JOIN glass ON recipe.glass = glass.rowid
         JOIN category ON recipe.category = category.rowid
-        JOIN (
-            SELECT recipe.rowid AS recipe_id, GROUP_CONCAT(ingredient.name, ';') AS name, GROUP_CONCAT(unit.name, ';') AS unit,
-                GROUP_CONCAT(recipe_ingredient.amount, ';') AS amount, GROUP_CONCAT(type.name, ';') AS type,
-                GROUP_CONCAT(recipe_ingredient.notes, ';') AS notes FROM recipe
-            JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_id = recipe.rowid
-            JOIN recipe_ingredient ON recipe_ingredient.rowid = recipe_recipe_ingredient.recipe_ingredient_id
-            JOIN ingredient ON ingredient.rowid = recipe_ingredient.ingredient
-            JOIN unit ON unit.rowid = recipe_ingredient.unit
-            JOIN type ON type.rowid = recipe_ingredient.type
-            WHERE recipe.rowid = ?
-        ) AS ingredients ON recipe.rowid = ingredients.recipe_id;""", [id, id, id]);
-    row = cursor.fetchone()
+        WHERE """ + where_statement + """ GROUP BY recipe.rowid;"""
+    recipe_rows = cursor.execute(query, ids)
+    recipe_rows = list(recipe_rows)
 
-    title = row[0]
-    flavors = row[1].split(';')
-    category = row[2]
-    glass = row[3]
-    ingredient_names = row[4].split(';')
-    ingredient_amounts = row[5].split(';')
-    ingredient_units = row[6].split(';')
-    ingredient_types = row[7].split(';')
-    ingredient_notes = row[8].split(';')
-    instructions = row[9]
-    information = row[10]
+    ingredients = get_ingredients_from_recipe_ids(cursor, ids)
 
-    ingredients = []
-    for i, name in enumerate(ingredient_names):
-        ingredients.append(Recipe_Ingredient(name, ingredient_amounts[i], ingredient_units[i], ingredient_types[i], ingredient_notes[i]))
-    recipe = Recipe(title, category, flavors, glass, ingredients, instructions, information)
+    recipes = []
+    for row in recipe_rows:
+        title = row[1]
+        category = row[2]
+        flavors = row[3].split(';')
+        glass = row[4]
+        instructions = row[5]
+        information = row[6]
+        recipe_ingredients = ingredients[row[0]]
+        recipes.append(Recipe(title, category, flavors, glass, recipe_ingredients, instructions, information))
 
-    print(recipe)
+    return recipes
 
 def search_all(cursor):
-    print("Not implemented")
+    print("What do you want to search for?")
+    searches = input("> ")
+    print()
+    searches = searches.split()
 
-def print_recipes_from_rowid_title(cursor, rowid_title):
-    result_ids = []
+    rows = cursor.execute("SELECT rowid FROM recipe;")
 
-    if len(rowid_title) == 0:
-        print("No results found")
+    ids = []
+    for row in rows:
+        ids.append(row[0])
+
+    all_recipes = get_recipe_from_ids(cursor, ids)
+    recipes = []
+    for recipe in all_recipes:
+        if all(search.lower() in str(recipe).lower() for search in searches):
+            recipes.append(recipe)
+
+    if len(recipes) == 0:
+        print("No recipes found with search '%s'" % ' '.join(searches))
         return
-    if len(rowid_title) == 1:
-        show_recipe_from_id(cursor, rowid_title[0][0])
+    elif len(recipes) == 1:
+        print(recipes[0])
         return
 
-    for index, row in enumerate(rowid_title):
-        print("(%i) %s" % (index, row[1]))
-        result_ids.append(row)
+    for i, recipe in enumerate(recipes):
+        print("(%i) %s" % (i, recipe.title))
 
-    print("Which recipe(s) do you want to show results? Insert 'c' for cancel")
+    print("Which recipe(s) do you want to view? Insert 'c' for cancel")
     search = input("> ")
     print()
+
+    if search == "":
+        for recipe in recipes:
+            print(recipe)
+        return
 
     if search[0].lower() == 'c':
         return
@@ -147,10 +179,53 @@ def print_recipes_from_rowid_title(cursor, rowid_title):
         return
     else:
         for index in numbers:
-            if index >= len(result_ids) or index < 0:
-                print("%i was not a valid selection" % index)
+            if index >= len(recipes) or index < 0:
+                print("%i was not a valid selection. Skipping" % index)
             else:
-                show_recipe_from_id(cursor, result_ids[index][0])
+                print(recipes[index])
+
+def print_recipes_from_rowid_title(cursor, rowid_title):
+    result_ids = []
+
+    if len(rowid_title) == 0:
+        print("No results found")
+        return
+    if len(rowid_title) == 1:
+        recipes = get_recipe_from_ids(cursor, [rowid_title[0][0]])
+        for recipe in recipes:
+            print(recipe)
+        return
+
+    for index, row in enumerate(rowid_title):
+        print("(%i) %s" % (index, row[1]))
+        result_ids.append(row[0])
+
+    print("Which recipe(s) do you want to show results? Insert 'c' for cancel")
+    search = input("> ")
+    print()
+
+    if search == "":
+        recipes = get_recipe_from_ids(cursor, result_ids)
+        for recipe in recipes:
+            print(recipe)
+        return
+    elif search[0].lower() == 'c':
+        return
+
+    numbers = list(map(int, re.findall(r'\d+', search)))
+    if len(numbers) == 0:
+        print("Not a valid selection")
+        return
+    else:
+        valid_indices = []
+        for index in numbers:
+            if index >= len(result_ids) or index < 0:
+                print("%i was not a valid selection. Skipping" % index)
+            else:
+                valid_indices.append(result_ids[index])
+        recipes = get_recipe_from_ids(cursor, valid_indices)
+        for recipe in recipes:
+            print(recipe)
 
 def title_search(cursor):
     print("What recipe title do you want to search for?")
@@ -269,7 +344,7 @@ def ingredient_search(cursor):
         temp = []
         for index in numbers:
             if index >= len(result_ids) or index < 0:
-                print("%i was not a valid selection. Ignoring" % index)
+                print("%i was not a valid selection. Skipping" % index)
             else:
                 temp.append(results[index][0])
         if len(temp) == 0:
