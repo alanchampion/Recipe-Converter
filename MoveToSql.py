@@ -35,13 +35,13 @@ def add_ingredient_from_file(file_name, cursor):
 
         for flavor, amount in dictionary_flavors.items():
             if flavor not in flavors:
-                # print("Should add %s into database" % flavor)
+                #print("Should add %s into database" % flavor)
                 cursor.execute("INSERT INTO flavor (name) VALUES (?)", [flavor])
                 flavors.add(flavor)
             cursor.execute("SELECT rowid FROM flavor WHERE name=?", [flavor])
             flavor_id = cursor.fetchone()[0]
             cursor.execute("""INSERT INTO ingredient_flavor (ingredient_id, flavor_id, amount)
-                VALUES ('%i', '%i', '%i')""" % (ingredient_id, flavor_id, amount))
+                VALUES (?,?,?)""", [ingredient_id, flavor_id, amount])
 
 def add_recipe_from_file(file_name, cursor):
     #title, category, flavors, glass, recipe_ingredients, instructions, information):
@@ -102,9 +102,7 @@ def add_recipe_from_file(file_name, cursor):
         cursor.execute("SELECT rowid FROM category WHERE name=?", [category])
         category_id = cursor.fetchone()[0]
 
-        cursor.execute("INSERT INTO recipe_title (title) VALUES (?);", [title])
-        title_id = cursor.lastrowid
-        cursor.execute("INSERT INTO recipe (title_id, category, glass, instructions, information) VALUES (?,?,?,?,?);",
+        cursor.execute("INSERT INTO recipe (title, category, glass, instructions, information) VALUES (?,?,?,?,?);",
             [title, category_id, glass_id, instructions, information])
         recipe_id = cursor.lastrowid
 
@@ -185,88 +183,91 @@ try:
     connection = sqlite3.connect("cocktailbar.db")
     cursor = connection.cursor()
 
+    cursor.execute("PRAGMA foreign_keys = ON;")
+    connection.commit()
+
+    cursor.execute("DROP TABLE IF EXISTS ingredient_substitution")
+    cursor.execute("DROP TABLE IF EXISTS ingredient_flavor")
+    cursor.execute("DROP TABLE IF EXISTS recipe_recipe_ingredient")
+    cursor.execute("DROP TABLE IF EXISTS recipe_ingredient")
+    cursor.execute("DROP TABLE IF EXISTS ingredient")
+    cursor.execute("DROP TABLE IF EXISTS recipe_flavor")
+    cursor.execute("DROP TABLE IF EXISTS recipe")
+    cursor.execute("DROP TABLE IF EXISTS glass")
+    cursor.execute("DROP TABLE IF EXISTS category")
+    cursor.execute("DROP TABLE IF EXISTS recipe_title")
+    cursor.execute("DROP TABLE IF EXISTS flavor")
+    cursor.execute("DROP TABLE IF EXISTS unit")
+    cursor.execute("DROP TABLE IF EXISTS type")
+    connection.commit()
+
     #Ingredients
-    cursor.execute('''DROP TABLE IF EXISTS ingredient''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ingredient (
         rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
-    cursor.execute('''DROP TABLE IF EXISTS ingredient_substitution''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ingredient_substitution (
         ingredient_id INTEGER NOT NULL,
         substitution_id INTEGER NOT NULL,
         alias BOOLEAN NOT NULL DEFAULT 0,
         PRIMARY KEY (ingredient_id, substitution_id))''')
 
-    cursor.execute('''DROP TABLE IF EXISTS flavor''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS flavor (
         rowid INTEGER PRIMARY KEY, name TEXT)''')
     connection.commit()
 
-    cursor.execute('''DROP TABLE IF EXISTS ingredient_flavor''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ingredient_flavor (
         ingredient_id INTEGER,
         flavor_id INTEGER,
         amount INTEGER,
-        FOREIGN KEY (ingredient_id) REFERENCES ingredient(id),
-        FOREIGN KEY (flavor_id) REFERENCES flavor(id),
+        FOREIGN KEY (ingredient_id) REFERENCES ingredient(rowid),
+        FOREIGN KEY (flavor_id) REFERENCES flavor(rowid),
         PRIMARY KEY (ingredient_id, flavor_id))''')
     connection.commit()
 
     # Recipes
-    cursor.execute('''DROP TABLE IF EXISTS glass''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS glass (
         rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
-    cursor.execute('''DROP TABLE IF EXISTS category''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS category (
         rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
-    cursor.execute('DROP TABLE IF EXISTS recipe_title')
-    cursor.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS recipe_title
-        USING FTS5(title)''')
-
-    cursor.execute('''DROP TABLE IF EXISTS recipe''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe (
         rowid INTEGER PRIMARY KEY,
-        title_id INTEGER,
+        title TEXT,
         category INTEGER,
         glass INTEGER,
         instructions TEXT,
         information TEXT,
-        FOREIGN KEY (glass) REFERENCES glass(id),
-        FOREIGN KEY (category) REFERENCES category(id)
+        FOREIGN KEY (glass) REFERENCES glass(rowid),
+        FOREIGN KEY (category) REFERENCES category(rowid)
         )''')
     connection.commit()
 
-    cursor.execute('''DROP TABLE IF EXISTS recipe_flavor''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe_flavor (
         recipe_id INTEGER,
         flavor_id INTEGER,
-        FOREIGN KEY (recipe_id) REFERENCES ingredient(id),
-        FOREIGN KEY (flavor_id) REFERENCES flavor(id),
+        FOREIGN KEY (recipe_id) REFERENCES recipe(rowid),
+        FOREIGN KEY (flavor_id) REFERENCES flavor(rowid),
         PRIMARY KEY (recipe_id, flavor_id))''')
     connection.commit()
 
     #recipe_ingredient
-    cursor.execute('''DROP TABLE IF EXISTS unit''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS unit (
         rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
-    cursor.execute('''DROP TABLE IF EXISTS type''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS type (
         rowid INTEGER PRIMARY KEY,
         name TEXT)''')
     connection.commit()
 
-    cursor.execute('''DROP TABLE IF EXISTS recipe_ingredient''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe_ingredient (
         rowid INTEGER PRIMARY KEY,
         ingredient INTEGER,
@@ -274,18 +275,17 @@ try:
         unit INTEGER,
         type INTEGER,
         notes TEXT,
-        FOREIGN KEY (ingredient) REFERENCES ingredient(id),
-        FOREIGN KEY (unit) REFERENCES unit(id),
-        FOREIGN KEY (type) REFERENCES type(id)
+        FOREIGN KEY (ingredient) REFERENCES ingredient(rowid),
+        FOREIGN KEY (unit) REFERENCES unit(rowid),
+        FOREIGN KEY (type) REFERENCES type(rowid)
         )''')
     connection.commit()
 
-    cursor.execute('''DROP TABLE IF EXISTS recipe_recipe_ingredient''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS recipe_recipe_ingredient (
         recipe_id INTEGER,
         recipe_ingredient_id INTEGER,
-        FOREIGN KEY (recipe_id) REFERENCES ingredient(id),
-        FOREIGN KEY (recipe_ingredient_id) REFERENCES recipe_ingredient(id),
+        FOREIGN KEY (recipe_id) REFERENCES recipe(rowid),
+        FOREIGN KEY (recipe_ingredient_id) REFERENCES recipe_ingredient(rowid),
         PRIMARY KEY (recipe_id, recipe_ingredient_id))''')
     connection.commit()
 
