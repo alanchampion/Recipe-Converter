@@ -134,10 +134,17 @@ def get_recipe_from_ids(cursor, ids):
     return recipes
 
 def search_all(cursor):
-    print("What do you want to search for?")
+    print("What do you want to search for? Use \"quotes\" to search phrases.")
     searches = input("> ")
     print()
-    searches = searches.split()
+    searches = searches.split('"')
+    phrases = searches[1::2]
+    phrases = sum([[phrase.strip()] for phrase in phrases], [])
+    words = searches[0::2]
+    words = sum([word.strip().split() for word in words], [])
+    searches = phrases + words
+    print(searches)
+
 
     rows = cursor.execute("SELECT rowid FROM recipe;")
 
