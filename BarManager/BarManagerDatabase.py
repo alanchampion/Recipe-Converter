@@ -3,56 +3,9 @@ import traceback
 import re
 from enum import Enum
 import readline
-
-class Ingredient:
-    def __init__(self, name):
-        self.name = name
-
-class Recipe_Ingredient:
-    def __init__(self, name, amount, unit, itype, notes):
-        self.name = name
-        self.amount = amount
-        self.unit = unit
-        self.type = itype
-        self.notes = notes
-
-    def __str__(self):
-        string = ""
-        if self.type and self.type.lower() != "main":
-            string += self.type + ": "
-        if self.amount:
-            string += str(self.amount) + " "
-        if self.unit:
-            string += self.unit + " "
-        if self.name:
-            string += self.name + " "
-        if self.notes:
-            string += "(" + self.notes + ")"
-        return string
-
-class Recipe:
-    def __init__(self, title, category, flavors, glass, recipe_ingredients, instructions, information):
-        self.title = title
-        self.category = category.lower()
-        self.flavors = list(map(lambda x: x.lower(), flavors))
-        self.glass = glass.lower()
-        self.recipe_ingredients = recipe_ingredients
-        self.instructions = instructions
-        self.information = information
-
-    def __str__(self):
-        string = "--------------------\n"
-        string += self.title + "\n"
-        string += "Category: " + self.category + "\n"
-        string += "Flavors: " + ", ".join(self.flavors) + "\n"
-        # if self.glass.lower() != "none":
-        string += "Glass: " + self.glass.capitalize() + "\n"
-        for ingredient in self.recipe_ingredients:
-            string += "\n" + str(ingredient)
-        string += "\n\n" + self.instructions + "\n"
-        string += "\n" + self.information + "\n"
-        string += "--------------------"
-        return string
+from BarManagerStructures import Ingredient
+from BarManagerStructures import Recipe
+from BarManagerStructures import Recipe_Ingredient
 
 class Method(Enum):
     QUIT = "q"
@@ -100,7 +53,7 @@ def get_ingredients_from_recipe_ids(cursor, recipe_ids):
         recipe_ingredients[ingredient[0]].append(Recipe_Ingredient(name, amount, unit, itype, notes))
     return recipe_ingredients
 
-def get_recipe_from_ids(cursor, ids):
+def get_recipes_from_ids(cursor, ids):
     if len(ids) == 0:
         print("No recipes specified")
         return []
@@ -133,11 +86,8 @@ def get_recipe_from_ids(cursor, ids):
 
     return recipes
 
-def search_all(cursor):
-    print("What do you want to search for? Use \"quotes\" to search phrases.")
-    searches = input("> ")
-    print()
-    searches = searches.split('"')
+def search_all(cursor, search_terms):
+    searches = search_terms.split('"')
     phrases = searches[1::2]
     phrases = sum([[phrase.strip()] for phrase in phrases], [])
     words = searches[0::2]
@@ -150,7 +100,7 @@ def search_all(cursor):
     for row in rows:
         ids.append(row[0])
 
-    all_recipes = get_recipe_from_ids(cursor, ids)
+    all_recipes = get_recipes_from_ids(cursor, ids)
     recipes = []
     for recipe in all_recipes:
         if all(search.lower() in str(recipe).lower() for search in searches):
@@ -158,11 +108,11 @@ def search_all(cursor):
 
     if len(recipes) == 0:
         print("No recipes found with search '%s'" % ' '.join(searches))
-        return
-    elif len(recipes) == 1:
-        print(recipes[0])
-        return
+        return []
 
+    return recipes
+
+def print_selected_recipes(recipes):
     for i, recipe in enumerate(recipes):
         print("(%i) %s" % (i, recipe.title))
 
@@ -196,7 +146,7 @@ def print_recipes_from_rowid_title(cursor, rowid_title):
         print("No results found")
         return
     if len(rowid_title) == 1:
-        recipes = get_recipe_from_ids(cursor, [rowid_title[0][0]])
+        recipes = get_recipes_from_ids(cursor, [rowid_title[0][0]])
         for recipe in recipes:
             print(recipe)
         return
@@ -210,7 +160,7 @@ def print_recipes_from_rowid_title(cursor, rowid_title):
     print()
 
     if search == "":
-        recipes = get_recipe_from_ids(cursor, result_ids)
+        recipes = get_recipes_from_ids(cursor, result_ids)
         for recipe in recipes:
             print(recipe)
         return
@@ -228,42 +178,43 @@ def print_recipes_from_rowid_title(cursor, rowid_title):
                 print("%i was not a valid selection. Skipping" % index)
             else:
                 valid_indices.append(result_ids[index])
-        recipes = get_recipe_from_ids(cursor, valid_indices)
+        recipes = get_recipes_from_ids(cursor, valid_indices)
         for recipe in recipes:
             print(recipe)
 
-def title_search(cursor):
-    print("What recipe title do you want to search for?")
-    search = input("> ")
-    print()
-
+def title_search(cursor, search_term):
     front_results = []
     middle_results = []
     back_results = []
-    results = []
+    any_results = []
+    recipe_ids = []
     all_rows = cursor.execute("""SELECT rowid, title FROM recipe""")
     for row in all_rows:
-        if search.lower() == row[1].lower():
+        if search_term.lower() == row[1].lower():
             front_results.append(row)
-        elif string_front_found(search.lower(), row[1].lower()):
+        elif string_front_found(search_term.lower(), row[1].lower()):
             middle_results.append(row)
-        elif string_found(search.lower(), row[1].lower()):
+        elif string_found(search_term.lower(), row[1].lower()):
             back_results.append(row)
+        elif search_term.lower() in row[1].lower():
+            any_results.append(row)
 
     row_sort = lambda row : row[1]
     front_results.sort(key=row_sort)
     middle_results.sort(key=row_sort)
     back_results.sort(key=row_sort)
-    results.extend(front_results)
-    results.extend(middle_results)
-    results.extend(back_results)
+    any_results.sort(key=row_sort)
+    recipe_ids.extend([result[0] for result in front_results])
+    recipe_ids.extend([result[0] for result in middle_results])
+    recipe_ids.extend([result[0] for result in back_results])
+    recipe_ids.extend([result[0] for result in any_results])
 
-    print_recipes_from_rowid_title(cursor, results)
+    return get_recipes_from_ids(cursor, recipe_ids)
 
 def get_recipes_from_ingredient_ids(cursor, ingredient_ids):
     if len(ingredient_ids) == 0:
         print("No ingredients specified")
-        return
+        return []
     elif len(ingredient_ids) == 1:
         all_rows = cursor.execute("""SELECT DISTINCT recipe.rowid, recipe.title FROM recipe_ingredient
             JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_ingredient_id = recipe_ingredient.rowid
@@ -273,7 +224,7 @@ def get_recipes_from_ingredient_ids(cursor, ingredient_ids):
         for row in all_rows:
             results.append(row)
         print_recipes_from_rowid_title(cursor, results)
-        return
+        return []
     else:
         where_statement = "recipe_ingredient.ingredient = ? OR " * len(ingredient_ids)
         where_statement = where_statement[:-3]
@@ -294,45 +245,50 @@ def get_recipes_from_ingredient_ids(cursor, ingredient_ids):
             results.append(row)
         print_recipes_from_rowid_title(cursor, results)
 
-def ingredient_search(cursor):
+def ingredient_search(cursor, search_term):
     recipes = []
-
-    print("What ingredient do you want to search for?")
-    search = input("> ")
-    print()
 
     front_results = []
     middle_results = []
     back_results = []
+    all_other_results = []
     results = []
     result_ids = []
     all_rows = cursor.execute("""SELECT rowid, name FROM ingredient""")
     for row in all_rows:
-        if search.lower() == row[1].lower():
+        if search_term.lower() == row[1].lower():
             front_results.append(row)
-        elif string_front_found(search.lower(), row[1].lower()):
+        elif string_front_found(search_term.lower(), row[1].lower()):
             middle_results.append(row)
-        elif string_found(search.lower(), row[1].lower()):
+        elif string_found(search_term.lower(), row[1].lower()):
             back_results.append(row)
+        elif search_term.lower() in row[1].lower():
+            all_other_results.append(row)
 
     row_sort = lambda row : row[1]
     front_results.sort(key=row_sort)
     middle_results.sort(key=row_sort)
     back_results.sort(key=row_sort)
-    results.extend(front_results)
-    results.extend(middle_results)
-    results.extend(back_results)
+    all_other_results.sort(key=row_sort)
+    results.extend([result[0] for result in front_results])
+    results.extend([result[0] for result in middle_results])
+    results.extend([result[0] for result in back_results])
+    results.extend([result[0] for result in all_other_results])
 
-    if len(results) == 0:
+    return get_ingredients_from_ids(cursor, results)
+
+# Currently broken
+def get_ingredients_from_ids(cursor, ingredient_ids):
+    if len(ingredient_ids) == 0:
         print("No results found")
-        return
-    if len(results) == 1:
-        recipes = get_recipes_from_ingredient_ids(cursor, [results[0][0]])
+        return []
+    if len(ingredient_ids) == 1:
+        recipes = get_recipes_from_ingredient_ids(cursor, [ingredient_ids[0]])
         return
 
-    for index, row in enumerate(results):
-        print("(%i) %s" % (index, row[1]))
-        result_ids.append(row)
+    for index, ingredient_id in enumerate(ingredient_ids):
+        print("(%i) %s" % (index, ingredient_id))
+        result_ids.append(ingredient_id)
 
     print("Which ingredient do you want to search on? Insert 'c' for cancel")
     search = input("> ")
@@ -371,107 +327,51 @@ def main():
         print("Invalid option")
         return Method.NONE
 
-try:
-    connection = sqlite3.connect("cocktailbar.db")
-    cursor = connection.cursor()
+def cli():
+    try:
+        connection = sqlite3.connect("../cocktailbar.db")
+        cursor = connection.cursor()
 
-    while(True):
-        print('============================================================')
-        method = main()
-        print()
-        if method == Method.QUIT:
+        while(True):
             print('============================================================')
-            break
-        elif method == Method.SEARCH:
-            search_all(cursor)
-        elif method == Method.TITLE_SEARCH:
-            title_search(cursor)
-        elif method == Method.INGREDIENT_SEARCH:
-            ingredient_search(cursor)
-        elif method == Method.NONE:
-            pass
-        else:
-            print("How did you get here?")
-        print('============================================================')
-        print()
+            method = main()
+            print()
+            if method == Method.QUIT:
+                print('============================================================')
+                break
+            elif method == Method.SEARCH:
+                print("What do you want to search for? Use \"quotes\" to search phrases.")
+                searches = input("> ")
+                print()
 
-    cursor.close()
-except sqlite3.Error as error:
-    print("Error while connecting to sqlite: ", error)
-    traceback.print_exc()
-finally:
-    if (connection):
-        connection.close()
-        print("The SQLite connection is closed")
+                recipes = search_all(cursor, search)
+                print_selected_recipes(recipes)
+            elif method == Method.TITLE_SEARCH:
+                print("What recipe title do you want to search for?")
+                search = input("> ")
+                print()
+                recipes = title_search(cursor, search_term)
+                print_selected_recipes(recipes)
+            elif method == Method.INGREDIENT_SEARCH:
+                print("What ingredient do you want to search for?")
+                search_term = input("> ")
+                print()
+                ingredient_ids = ingredient_search(cursor)
 
-# Get the ingredients
-# SELECT ingredient.name, flavor.name, ingredient_flavor.amount FROM ingredient
-#   JOIN ingredient_flavor ON ingredient.id = ingredient_flavor.ingredient_id
-#   JOIN flavor ON flavor.id = ingredient_flavor.flavor_id;
+            elif method == Method.NONE:
+                pass
+            else:
+                print("How did you get here?")
+            print('============================================================')
+            print()
 
-# Get the recipes without ingredients
-# SELECT recipe.title, GROUP_CONCAT(flavor.name) as flavors, category.name, glass.name, recipe.instructions, recipe.information
-#   FROM recipe
-#   JOIN recipe_flavor ON recipe.id = recipe_flavor.recipe_id
-#   JOIN flavor ON flavor.id = recipe_flavor.flavor_id
-#   JOIN glass ON recipe.glass = glass.id
-#   JOIN category ON recipe.category = category.id
-#   WHERE recipe.title = 'Old Fashioned';
+        cursor.close()
+    except sqlite3.Error as error:
+        print("Error while connecting to sqlite: ", error)
+        traceback.print_exc()
+    finally:
+        if (connection):
+            connection.close()
+            print("The SQLite connection is closed")
 
-# Get the full recipe, ingredients concatinated
-# SELECT recipe.title, GROUP_CONCAT(DISTINCT flavors.name), category.name, glass.name,
-#    GROUP_CONCAT(DISTINCT ingredients.ingredient), recipe.instructions, recipe.information
-#    FROM (
-#        SELECT * FROM recipe WHERE recipe.title = 'Old Fashioned'
-#    ) AS recipe
-#    JOIN (
-#        SELECT recipe.id as recipe_id, flavor.name as name FROM recipe
-#        JOIN recipe_flavor ON recipe.id = recipe_flavor.recipe_id
-#        JOIN flavor ON flavor.id = recipe_flavor.flavor_id
-#    ) AS flavors ON recipe.id = flavors.recipe_id
-#    JOIN glass ON recipe.glass = glass.id
-#    JOIN category ON recipe.category = category.id
-#    JOIN (
-#        SELECT recipe.id as recipe_id, type.name || ': ' || recipe_ingredient.amount ||
-#        ' ' || unit.name || ' ' || ingredient.name || ' (' || recipe_ingredient.notes || ')' as ingredient FROM recipe
-#        JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_id = recipe.id
-#        JOIN recipe_ingredient on recipe_ingredient.id = recipe_recipe_ingredient.recipe_ingredient_id
-#        JOIN ingredient on ingredient.id = recipe_ingredient.ingredient
-#        JOIN unit on unit.id = recipe_ingredient.unit
-#        JOIN type on type.id = recipe_ingredient.type
-#        WHERE recipe.title = 'Old Fashioned'
-#    ) AS ingredients ON recipe.id = ingredients.recipe_id
-
-# Get the full recipe, ingredients seperate
-# SELECT recipe.title, flavors.name, category.name, glass.name,
-#     ingredients.name, ingredients.amount, ingredients.unit, ingredients.type,
-#     ingredients.notes, recipe.instructions, recipe.information
-#     FROM (
-#         SELECT * FROM recipe WHERE recipe.title = 'Old Fashioned'
-#     ) AS recipe
-#     JOIN (
-#         SELECT recipe.id as recipe_id, GROUP_CONCAT(flavor.name) as name FROM recipe
-#         JOIN recipe_flavor ON recipe.id = recipe_flavor.recipe_id
-#         JOIN flavor ON flavor.id = recipe_flavor.flavor_id
-#         WHERE recipe.title = 'Old Fashioned'
-#     ) AS flavors ON recipe.id = flavors.recipe_id
-#     JOIN glass ON recipe.glass = glass.id
-#     JOIN category ON recipe.category = category.id
-#     JOIN (
-#         SELECT recipe.id as recipe_id, GROUP_CONCAT(ingredient.name, ';') as name, GROUP_CONCAT(unit.name, ';') as unit,
-#             GROUP_CONCAT(recipe_ingredient.amount, ';') as amount, GROUP_CONCAT(type.name, ';') as type,
-#             GROUP_CONCAT(recipe_ingredient.notes, ';') as notes FROM recipe
-#         JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_id = recipe.id
-#         JOIN recipe_ingredient on recipe_ingredient.id = recipe_recipe_ingredient.recipe_ingredient_id
-#         JOIN ingredient on ingredient.id = recipe_ingredient.ingredient
-#         JOIN unit on unit.id = recipe_ingredient.unit
-#         JOIN type on type.id = recipe_ingredient.type
-#         WHERE recipe.title = 'Old Fashioned'
-#     ) AS ingredients ON recipe.id = ingredients.recipe_id
-
-# Get recipe's that include a specific ingredient
-# SELECT recipe.id, recipe.title FROM ingredient
-#     JOIN recipe_ingredient ON recipe_ingredient.ingredient = ingredient.id
-#     JOIN recipe_recipe_ingredient ON recipe_recipe_ingredient.recipe_ingredient_id = recipe_ingredient.id
-#     JOIN recipe ON recipe.id = recipe_recipe_ingredient.recipe_id
-#     WHERE ingredient.name = 'bourbon';
+# cli()
